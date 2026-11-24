@@ -2,6 +2,12 @@ name: Matched visual regression
 on:
   pull_request:
     paths:
+      - 'src/core/paperEdge.ts'
+      - 'src/core/pages.ts'
+      - 'src/core/chunkMotion.ts'
+      - 'src/main.tsx'
+      - 'src/style.css'
+      - 'src/editor/settings.ts'
       - 'src/core/stackGeometry.ts'
       - 'src/core/book.ts'
       - 'src/core/readingCamera.ts'

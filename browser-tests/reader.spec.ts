@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test'
+import {writeFile} from 'node:fs/promises'
 test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page},testInfo)=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/WebGLProgram|shader error|VALIDATE_STATUS/i.test(m.text()))errors.push(m.text())})
  await page.goto('/')
@@ -146,4 +147,57 @@ test('阅读状态修改装订参数后重新适配，场景相机与方向选�
  await page.getByRole('button',{name:'适配相机'}).click()
  await expect(direction).toHaveValue('perspective')
  await expect(host).toHaveAttribute('data-read-zoom','1.0000')
+})
+
+test('设置分组重置、材质预设与跨页选择保留作品数据',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/')
+ await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'custom.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,title:'自定义书籍',width:200,pageCount:40,pageIndex:5,opening:180,roughness:.3,pageCurl:.2}))})
+ const host=page.locator('.canvas-host');await expect(host).toHaveAttribute('data-page-index','5')
+ await page.getByRole('button',{name:'重置书籍规格'}).click()
+ await expect(page.getByRole('spinbutton',{name:'宽度 数值'})).toHaveValue('150')
+ await expect(host).toHaveAttribute('data-page-index','5')
+ await page.getByRole('button',{name:/材质/}).first().click()
+ await page.locator('.material-presets').getByRole('button',{name:'Night Edition'}).click()
+ await expect(page.getByText('标题',{exact:true}).locator('input')).toHaveValue('自定义书籍')
+ await expect(page.getByRole('spinbutton',{name:'粗糙度 数值'})).toHaveValue('0.24')
+ await page.getByRole('button',{name:/内页/}).first().click()
+ await page.getByRole('button',{name:'重置翻页与纸张'}).click()
+ await expect(page.getByRole('spinbutton',{name:'纸张卷曲 数值'})).toHaveValue('0.72')
+ await expect(page.getByRole('spinbutton',{name:'内页数量 数值'})).toHaveValue('40')
+ await page.getByRole('combobox',{name:'跳转跨页'}).selectOption('12')
+ await expect(host).toHaveAttribute('data-page-index','12')
+})
+
+test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testInfo)=>{
+ // Read pixels inside the same rAF as the actual WebGL draw, not after a
+ // later Playwright screenshot command has allowed the overlay to disappear.
+ await page.addInitScript(()=>{
+   const w=window as Window&{__handoffFrame?:string};const raf=window.requestAnimationFrame.bind(window)
+   window.requestAnimationFrame=callback=>raf(now=>{
+     callback(now);const host=document.querySelector<HTMLElement>('.canvas-host')
+     if(!w.__handoffFrame&&host?.dataset.chunkHandoff==='true'&&Number(host.dataset.renderedHandoffFrames)>0){
+       const canvas=host.querySelector('canvas');if(canvas)w.__handoffFrame=canvas.toDataURL('image/png')
+     }
+   })
+ })
+ await page.goto('/')
+ await page.getByRole('button',{name:/内页/}).first().click()
+ const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
+ await page.getByRole('button',{name:/模型/}).click()
+ const host=page.locator('.canvas-host');await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000})
+ await expect.poll(async()=>Boolean(await host.getAttribute('data-large-group-pick')),{timeout:15000}).toBe(true)
+ const point=JSON.parse((await host.getAttribute('data-large-group-pick'))!) as [number,number]
+ await page.mouse.move(...point);await page.mouse.down();await page.mouse.move(point[0]-8,point[1]);
+ await expect.poll(async()=>Number(await host.getAttribute('data-group-drag'))).toBeGreaterThan(6)
+ // The handoff is transient. Require evidence of an actually rendered
+ // overlay even when slow software WebGL advances past it before polling.
+ await expect.poll(async()=>Number(await host.getAttribute('data-rendered-handoff-frames')),{timeout:10000}).toBeGreaterThan(0)
+ const png=await page.evaluate(()=>(window as Window&{__handoffFrame?:string}).__handoffFrame)
+ expect(png?.startsWith('data:image/png;base64,')).toBe(true)
+ const bytes=Buffer.from(png!.split(',')[1],'base64');expect(bytes.length).toBeGreaterThan(10000)
+ await writeFile(testInfo.outputPath('chunk-handoff.png'),bytes)
+ await page.mouse.move(point[0]-150,point[1],{steps:4});await expect(host).toHaveAttribute('data-chunk-handoff','false',{timeout:15000})
+ await page.mouse.move(point[0]+15,point[1],{steps:4});await page.mouse.up()
+ await expect(host).toHaveAttribute('data-chunk-phase','idle',{timeout:55000});await expect(host).toHaveAttribute('data-page-index','0')
 })

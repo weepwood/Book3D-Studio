@@ -7,6 +7,7 @@ import {activeSpan,type ActiveLeaf} from './pageWindow'
 import {createChunkGeometry} from './stackGeometry'
 import {PRESS_SCENE} from './referenceScene'
 import {applyPaperShading} from './paperShading'
+import {paperEdgeTexture} from './paperEdge'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -90,8 +91,10 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     leaf.add(fm,bm);root.add(leaf);leaf.visible=false
     const value={leaf,front,back,gpu,fm,bm};slots.push(value);return value
   }
-  const chunkShape=createChunkGeometry(w,h),chunkFront=paperMat(),chunkBack=paperMat(T.FrontSide,true),chunkEdge=paperMat(T.FrontSide,false,false);chunkEdge.color.set(c.paperColor)
-  const chunk=new T.Mesh(chunkShape.g,[chunkEdge,chunkEdge,chunkEdge,chunkEdge,chunkFront,chunkBack]);chunk.name='Turning page block';chunk.castShadow=chunk.receiveShadow=true;chunk.visible=false;root.add(chunk)
+  const chunkShape=createChunkGeometry(w,h),chunkFront=paperMat(),chunkBack=paperMat(T.FrontSide,true),chunkEdge=paperMat(T.FrontSide,false,false),chunkHead=paperMat(T.FrontSide,false,false);chunkEdge.map=paperEdgeTexture(c.paperColor,true);chunkHead.map=paperEdgeTexture(c.paperColor,false)
+  const chunk=new T.Mesh(chunkShape.g,[chunkEdge,chunkEdge,chunkHead,chunkHead,chunkFront,chunkBack]);chunk.name='Turning page block';chunk.castShadow=chunk.receiveShadow=true;chunk.visible=false;root.add(chunk)
+  const blank=paperMat();blank.color.set(c.paperColor)
+  const handoff=new T.Mesh(chunkShape.handoff,chunkFront);handoff.name='Chunk handoff leaf';handoff.visible=false;handoff.castShadow=handoff.receiveShadow=true;handoff.frustumCulled=false;chunk.add(handoff)
   const keys=new Map<T.MeshPhongMaterial,string>()
   function assign(mat:T.MeshPhongMaterial,index:number,flip=false){
     const key=index+':'+flip
@@ -101,7 +104,8 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   }
   function update(next:BookConfig){
     if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor)keys.clear()
-    config=next;chunkEdge.color.set(next.paperColor)
+    if(next.paperColor!==config.paperColor){for(const [mat,vertical] of [[chunkEdge,true],[chunkHead,false]] as const){mat.map?.dispose();mat.map=paperEdgeTexture(next.paperColor,vertical);mat.needsUpdate=true}}
+    config=next;blank.color.set(next.paperColor)
   }
   function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].map(m=>!!m.map&&!m.map.userData.pending&&(!warm||warm(m.map))).every(Boolean)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
@@ -109,6 +113,9 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     assign(left.material,direction===-1?next.left:faces.left)
     assign(right.material,direction===1?next.right:faces.right)
     const block=(active[0]?.span??1)>1;chunk.visible=block
+    handoff.visible=block&&active[0].handoffCurl!==undefined
+    chunk.material[4]=handoff.visible&&direction===1?blank:chunkFront;chunk.material[5]=handoff.visible&&direction===-1?blank:chunkBack
+    handoff.material=direction===1?chunkFront:chunkBack
     if(block)prepareChunk(index,direction,active[0].span!)
     if(!block)active.forEach((_a,i)=>{
       const s=slot(i),moving=turnFaces(index+direction*i,direction)
@@ -116,5 +123,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     })
     for(let i=block?0:active.length;i<slots.length;i++)slots[i].leaf.visible=false
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,dispose:()=>{blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }

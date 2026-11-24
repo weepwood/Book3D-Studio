@@ -17,6 +17,12 @@ export function stepTurn(progress:number,velocity:number,target:number,dt:number
       const near=1-Math.min(distance/R.nearRange,1)
       speed+=R.snapAcceleration*sign*Math.sin(Math.min(distance,Math.PI/2))*f
       speed*=Math.pow(1-Math.min(.98,.4*R.damping+near*near*R.nearDamping),f)
+      // Local convergence guard: the reference damping/acceleration pair can
+      // crawl exponentially at the final few degrees, especially at a 2s
+      // editor duration on a software-rendered browser. Keep braking motion
+      // intact when moving away, then bound the approach time continuously.
+      const terminalSpeed=distance*.04*near*near
+      if(sign!==0&&speed*sign>=0&&Math.abs(speed)<terminalSpeed)speed=sign*terminalSpeed
       angle=clamp(angle+speed*f,0,Math.PI)
       if(angle===0||angle===Math.PI)speed=0
     }

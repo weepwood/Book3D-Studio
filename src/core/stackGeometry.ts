@@ -1,6 +1,6 @@
 import * as T from 'three'
 import {stackBend,stackSweep,offsetStackProfile,PRESS_STACK_PROFILE} from './stackProfile'
-import {sampleChain,type Chain} from './pageChain'
+import {sampleChain,rollPoint,type Chain} from './pageChain'
 import {clamp} from './pagePhysics'
 // The reference's page model is much larger. Fit its angular profile to our
 // independent cover clearance before sampling; this is explicitly an adapter.
@@ -75,10 +75,28 @@ export function liftChunkChain(chain:Chain,lift:number,progress:number):Chain{
 }
 export type ChunkLayer={chain:Chain;x:number;z:number}
 export function createChunkGeometry(w:number,h:number){
- const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
- return {g,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0){
+ const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),baseUV=Float32Array.from(uv.array),normal=g.getAttribute('normal')
+ const faceIndices=[4,5].map(face=>{const group=g.groups.find(x=>x.materialIndex===face)!;return Array.from(g.index!.array.slice(group.start,group.start+group.count))})
+ const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
+ const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number}){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
-   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
+   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
+   const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true
+   p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
+   if(overlay){
+     const side=overlay.direction===1?4:5,sign=overlay.direction
+     if(face!==side){face=side;handoff.setIndex(faceIndices[face-4])}
+     const hp=handoff.getAttribute('position');hp.array.set(p.array)
+     // Overlay uses the same actual block face, including row twist and end
+     // blending. Apply only local curl displacement, never extra thickness.
+     for(const i of new Set(faceIndices[side-4])){
+       const y=original[i*3+1],u=original[i*3]/w+.5,row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),c=rows?.[row]??chain,a=sampleChain(c,u)
+       const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress)
+       hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003)
+     }
+     hp.needsUpdate=true;handoff.computeVertexNormals();handoff.computeBoundingSphere();handoff.computeBoundingBox()
+   }
  }}
 }
 
@@ -101,7 +119,10 @@ export function edgeTriangleCenters(g:T.BufferGeometry){
 // tangent from physical layer height; preserve arc length and outer clearance.
 const ROOT_LIMIT=Math.PI*.47
 const BINDING_STEPS=192
-const bindingShape=(u:number)=>Math.max(0,1-stackBend(u,PRESS_STACK_PROFILE.stackCurlFrontPower))
+// Retain the reference front-loaded profile and reverse-end component,
+// but relax the last part to a horizontal fore-edge contact in our cover basis.
+// This is a local boundary adapter, not a measured source angle.
+const bindingShape=(u:number)=>Math.max(0,1-stackBend(u,PRESS_STACK_PROFILE.stackCurlFrontPower))*(1-u**4)
 const bindingMidpoints=Array.from({length:BINDING_STEPS},(_,i)=>bindingShape((i+.5)/BINDING_STEPS))
 function riseFraction(angle:number){let sum=0;for(const u of bindingMidpoints)sum+=Math.sin(angle*u);return sum/BINDING_STEPS}
 const maxRiseFraction=riseFraction(ROOT_LIMIT)

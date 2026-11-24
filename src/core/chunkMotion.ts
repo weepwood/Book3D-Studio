@@ -1,21 +1,21 @@
 import {clamp} from './pagePhysics'
 import {chunkAutoProgress,chunkRelease} from './referenceScene'
 export type ChunkPhase='prepare'|'gather'|'turn'|'release'|'landed'
-export type ChunkMotion={phase:ChunkPhase;gesture:boolean;visible:boolean;progress:number;lift:number;waitMs:number;elapsedMs:number;landedFrames:number;goal:0|1|null}
+export type ChunkMotion={phase:ChunkPhase;gesture:boolean;visible:boolean;progress:number;lift:number;waitMs:number;elapsedMs:number;landedFrames:number;goal:0|1|null;handoff:boolean;handoffCurl:number;handoffFrames:number}
 export const CHUNK_TEXTURE_TIMEOUT=1200
 export const CHUNK_LANDED_FRAMES=4
 const smooth=(a:number,b:number,x:number)=>{const t=clamp((x-a)/(b-a));return t*t*(3-2*t)}
-export const newChunkMotion=(gesture:boolean,progress=0,lift=0):ChunkMotion=>({phase:progress>0?(gesture?'gather':'turn'):'prepare',gesture,visible:progress>0,progress,lift,waitMs:0,elapsedMs:0,landedFrames:0,goal:null})
+export const newChunkMotion=(gesture:boolean,progress=0,lift=0,cornerCurl=0):ChunkMotion=>({phase:progress>0?(gesture?'gather':'turn'):'prepare',gesture,visible:progress>0,progress,lift,waitMs:0,elapsedMs:0,landedFrames:0,goal:null,handoff:gesture&&progress<.02,handoffCurl:gesture&&progress<.02?Math.max(0,cornerCurl):0,handoffFrames:0})
 export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dragging:boolean,target:number,goal:0|1){
  dt=clamp(dt,0,.25)
  const approach=(v:number,t:number,k:number)=>v+(t-v)*(1-Math.exp(-k*dt))
  if(m.phase==='prepare'){
-   if(!dragging&&goal===0){m.phase='landed';m.goal=0;m.lift=0;return}
+   if(!dragging&&goal===0){m.phase='landed';m.goal=0;m.lift=0;m.handoff=false;m.handoffCurl=0;return}
    m.waitMs+=dt*1000
    if(!ready&&m.waitMs<CHUNK_TEXTURE_TIMEOUT)return
    m.phase=m.gesture?(dragging?'gather':'release'):'turn';m.visible=true
  }
- if(m.phase==='landed'){m.landedFrames++;return}
+ if(m.phase==='landed'){m.handoff=false;m.handoffCurl=0;m.landedFrames++;return}
  if(m.phase==='gather'&&!dragging||m.phase==='turn'&&goal===0){m.phase='release';m.goal=goal}
  if(m.phase==='gather'){
    m.lift=approach(m.lift,1,12);m.progress=approach(m.progress,clamp(target),14)
@@ -26,6 +26,20 @@ export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dra
    m.goal=goal;m.progress=chunkRelease(m.progress,goal,dt)
    m.lift=approach(m.lift,goal===1?1-smooth(.55,.95,m.progress):0,10)
    if(m.progress===goal&&m.lift<.01){m.lift=0;m.phase='landed'}
+ }
+ // Source handoff: retain the gesture leaf only while gathering at the
+ // origin or its visible curl has not decayed below .02. No automatic leaf.
+ if(m.handoff){
+   if(m.phase==='landed'){m.handoff=false;m.handoffCurl=0}
+   else if(m.visible){
+     // The first visible pose must actually contain the independent leaf.
+     // A large dt on SwiftShader must not decay it before its first render.
+     if(m.handoffFrames>0&&!(m.phase==='gather'&&m.progress<.02)){
+       m.handoffCurl*=Math.pow(.82,dt*60)
+       if(m.handoffCurl<.02){m.handoff=false;m.handoffCurl=0}
+     }
+     if(m.handoff)m.handoffFrames++
+   }
  }
 }
 export function chunkCanCommit(m:ChunkMotion,renderProgress:number){return m.phase==='landed'&&m.landedFrames>=CHUNK_LANDED_FRAMES&&Math.abs(renderProgress-m.progress)<.002}

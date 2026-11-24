@@ -2,6 +2,9 @@ name: Reader smoke
 on:
   pull_request:
     paths:
+      - 'src/core/paperEdge.ts'
+      - 'src/editor/settings.ts'
+      - 'src/style.css'
       - 'src/core/pages.ts'
       - 'src/core/pageGpu.ts'
       - 'src/core/pageChain.ts'
