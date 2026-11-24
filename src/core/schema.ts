@@ -6,6 +6,12 @@ export type BookConfig = {
   width: number
   height: number
   thickness: number
+  boardThickness: number
+  cornerRadius: number
+  pageInset: number
+  spineStyle: 'rounded' | 'square'
+  coverFlex: number
+  pageCoupling: number
   coverColor: string
   paperColor: string
   inkColor: string
@@ -21,13 +27,15 @@ export type BookConfig = {
 }
 export const defaults: BookConfig = {
   version: 1, title: 'The Art of Making', subtitle: 'FIELD NOTES / VOLUME 01',
-  author: 'STUDIO EDITIONS', width: 150, height: 220, thickness: 32,
+  author: 'STUDIO EDITIONS', width: 150, height: 220, thickness: 32, boardThickness: 2.5, cornerRadius: 1.2, pageInset: 2.5,
+  spineStyle: 'rounded', coverFlex: .28, pageCoupling: .45,
   coverColor: '#354d40', paperColor: '#e8dfca', inkColor: '#dec48d',
   finish: 'cloth', roughness: 0.68, coverImage: '', opening: 0, yaw: -28, pitch: 12,
   light: 3, background: '#e9e7df', interaction: 'click'
 }
 export const ranges = {
   width:[90,250], height:[120,320], thickness:[8,80],
+  boardThickness:[.8,3], cornerRadius:[0,4], pageInset:[1,4], coverFlex:[0,1], pageCoupling:[0,1],
   roughness:[0.05,1], opening:[0,150], yaw:[-180,180], pitch:[-65,65], light:[0.2,6]
 } as const
 export function parseConfig(raw: unknown): BookConfig {
@@ -50,6 +58,10 @@ export function parseConfig(raw: unknown): BookConfig {
     const x = v[k] ?? defaults[k]
     if(typeof x !== 'string' || !/^#[0-9a-f]{6}$/i.test(x)) throw new Error('无效颜色')
     out[k] = x
+  }
+  if(v.spineStyle !== undefined) {
+    if(v.spineStyle !== 'rounded' && v.spineStyle !== 'square') throw new Error('无效书脊结构')
+    out.spineStyle = v.spineStyle
   }
   if(v.finish !== undefined) {
     if(v.finish !== 'cloth' && v.finish !== 'matte' && v.finish !== 'gloss') throw new Error('无效材质')

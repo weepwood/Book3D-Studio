@@ -1,6 +1,7 @@
 import * as T from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { BookConfig } from './schema'
+import { bookDimensions, openingPose, skinnedBoard, boardGeometry } from './geometry'
 const texture = (canvas: HTMLCanvasElement) => {
   const t = new T.CanvasTexture(canvas)
   t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4
@@ -45,7 +46,8 @@ function bump(){
 }
 export function createBook(c:BookConfig, invalidate:()=>void){
   const root=new T.Group()
-  const w=c.width/100,h=c.height/100,d=c.thickness/100,t=.028
+  const {w,h,d,t,inset,pageWidth,pageHeight,pageDepth,coverZ}=bookDimensions(c.width,c.height,c.thickness,c.boardThickness,c.pageInset)
+  const radius=c.cornerRadius/100
   const coverMap=cover(c);coverMap.userData.invalidate=invalidate
   const cloth=c.finish==='cloth'?bump():null
   const board=new T.MeshPhysicalMaterial({color:c.coverColor,roughness:c.roughness,bumpMap:cloth,bumpScale:cloth ? .006 : 0,clearcoat:c.finish==='gloss'?.85:0,clearcoatRoughness:.18})
@@ -56,16 +58,32 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   function mesh(g:T.BufferGeometry,m:T.Material|T.Material[],parent:T.Object3D,x:number,y:number,z:number){
     const o=new T.Mesh(g,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o
   }
-  const back=mesh(new RoundedBoxGeometry(w,h,t,3,.009),board,root,0,0,-d/2)
+  const back=mesh(boardGeometry(w,h,t,radius),[board,board,board,board,inside,board],root,-w/2,0,-coverZ)
   back.name='Back cover'
-  const block=mesh(new T.BoxGeometry(w-.055,h-.06,d-t),[edgeV,edgeV,edgeH,edgeH,inside,inside],root,.012,0,0)
-  block.name='Page block'
-  const spine=mesh(new RoundedBoxGeometry(.065,h,d+t,4,.024),board,root,-w/2+.015,0,0)
+  const pageMaterials=[edgeV,edgeV,edgeH,edgeH,inside,inside]
+  const half=pageDepth/2
+  const lower=mesh(new T.BoxGeometry(pageWidth,pageHeight,half),pageMaterials,root,0,0,-half/2)
+  lower.name='Rear page block'
+  const pagePivot=new T.Group();pagePivot.position.x=-w/2+inset;root.add(pagePivot)
+  const upper=mesh(new T.BoxGeometry(pageWidth,pageHeight,half),pageMaterials,pagePivot,pageWidth/2,0,half/2)
+  upper.name='Front page block'
+  const spineWidth=Math.min(.075,Math.max(.027,inset*1.4))
+  const spine=mesh(new RoundedBoxGeometry(spineWidth,h,d,4,c.spineStyle==='rounded'?Math.min(spineWidth*.49,d*.24):.002),board,root,-w/2+spineWidth*.42,0,0)
   spine.name='Spine'
-  const hinge=new T.Group();hinge.position.set(-w/2,0,d/2);root.add(hinge)
-  const flap=mesh(new T.BoxGeometry(w,h,t),[board,board,board,board,front,inside],hinge,w/2,0,0)
-  flap.name='Front cover'
-  return {root,hinge,setOpening:(deg:number)=>{hinge.rotation.y=-T.MathUtils.degToRad(deg)},dispose:()=>disposeTree(root)}
+  const hinge=new T.Group();hinge.position.set(-w/2,0,coverZ);root.add(hinge)
+  const rig=skinnedBoard(w,h,t,radius,[board,board,board,board,front,inside])
+  rig.mesh.name='Front cover';rig.mesh.castShadow=true;rig.mesh.receiveShadow=true;hinge.add(rig.mesh)
+  let last=-1
+  const setOpening=(deg:number)=>{
+    if(deg===last)return
+    last=deg
+    const pose=openingPose(deg,c.coverFlex,c.pageCoupling)
+    hinge.rotation.y=pose.hinge;pagePivot.rotation.y=pose.page
+    rig.bones.forEach((bone,i)=>{bone.rotation.y=i===0?0:pose.bone})
+    root.updateMatrixWorld(true);rig.mesh.computeBoundingSphere();rig.mesh.computeBoundingBox()
+  }
+  setOpening(0)
+  return {root,hinge,setOpening,dispose:()=>{rig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()
