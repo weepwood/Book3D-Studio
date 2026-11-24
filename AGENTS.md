@@ -11,3 +11,5 @@
 - 待完成：原版平衡/弯曲书芯、独立多页回收、交互刹车与分组、打开时重力落页、相机和材质视觉对照。暂停 PDF 与外围功能。
 ## 文件
 src/core/pressReference.ts 原版证据参数；pageChain.ts CPU 参考；pageGpu.ts GPU；pageWindow.ts 活动窗口；pagePhysics.ts 控制；pages.ts 与 book.ts 组装；runtime.ts 渲染交互；browser-tests/reader.spec.ts WebGL 验收。
+
+V0.4.2 追加：局部悬停 GPU 卷曲、三层书芯偏移曲线采样；待原版坐标对照后接入静止书芯。PR #6 首轮 33/33 单测通过，浏览器瞬时并发断言失败；已改用同批 UI 输入 + 活动叶峰值回归，并新增悬停测试。
