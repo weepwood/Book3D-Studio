@@ -39,12 +39,12 @@ export function turningChain(width:number,p:number,flex:number,right:Chain,left:
 // bands per repeated tile. Density stays stable when the split changes.
 export function paperEdgeRepeat(width:number,depth:number){return Math.max(0,depth)/(2*.0234/15.6*Math.max(width,1e-8))}
 export function stackSection(layers:Chain[],depth:number,compression:number,u:number){
- const bottom=sampleChain(layers[0],u).z,top=depth*(1-clamp(compression))+sampleChain(layers[2],u).z
+ const bottom=sampleChain(layers[0],u).z,top=depth*(1-clamp(compression))+sampleChain(layers[layers.length-1],u).z
  return {bottom,top,thickness:top-bottom}
 }
-export function createStackGeometry(w:number,h:number){
- const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),originalUV=Float32Array.from(uv.array),normal=g.getAttribute('normal'),edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
- return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],level=Math.round((z+.5)*2),s=sampleChain(layers[sign===1?level:2-level],x/w+.5);p.setXYZ(i,s.x-w/2,y,z*depth+sign*(s.z-depth*clamp(compression)*(sign===1?level:2-level)/2))}const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+export function createStackGeometry(w:number,h:number,depthSegments=2){
+ const g=new T.BoxGeometry(w,h,1,48,1,depthSegments),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),originalUV=Float32Array.from(uv.array),normal=g.getAttribute('normal'),edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
+ return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],fraction=clamp(sign===1?z+.5:.5-z),layer=fraction*(layers.length-1),lo=Math.min(layers.length-2,Math.floor(layer)),q=layer-lo,a=sampleChain(layers[lo],x/w+.5),b=sampleChain(layers[lo+1],x/w+.5);p.setXYZ(i,T.MathUtils.lerp(a.x,b.x,q)-w/2,y,z*depth+sign*(T.MathUtils.lerp(a.z,b.z,q)-depth*clamp(compression)*fraction))}const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
 }
 export function poseSurface(g:T.BufferGeometry,chain:Chain,flip:boolean){
  const uv=g.getAttribute('uv'),p=g.getAttribute('position')

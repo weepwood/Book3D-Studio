@@ -3,7 +3,7 @@ import {test,expect} from '@playwright/test'
 test('低高度预览自动避让工具栏，缩放与返回编辑不裁切',async({page},info)=>{
  await page.setViewportSize({width:1440,height:520});await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/')
  const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible({timeout:15000});await page.getByRole('button',{name:'预览',exact:true}).click();await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000})
- const check=async()=>{const f=JSON.parse((await host.getAttribute('data-read-frame'))!) as {viewport:[number,number];bounds:{top:number;bottom:number};chrome:{top:number;bottom:number}};const h=f.viewport[1];expect(f.bounds.top+h/2).toBeGreaterThanOrEqual(Math.min(f.chrome.top,h*.36)-.5);expect(f.bounds.bottom+h/2).toBeLessThanOrEqual(h-Math.min(f.chrome.bottom,h*.42)+.5)}
+ const check=async()=>{const f=JSON.parse((await host.getAttribute('data-read-frame'))!) as {heightRatio:number;viewport:[number,number];bounds:{top:number;bottom:number};chrome:{top:number;bottom:number}};const h=f.viewport[1];expect(f.heightRatio).toBeGreaterThan(.50);expect(f.bounds.top+h/2).toBeGreaterThanOrEqual(Math.min(f.chrome.top,h*.36)-.5);expect(f.bounds.bottom+h/2).toBeLessThanOrEqual(h-Math.min(f.chrome.bottom,h*.42)+.5)}
  await check();await page.screenshot({path:info.outputPath('short-preview.png')});await page.getByRole('button',{name:'返回编辑'}).click();await expect.poll(async()=>JSON.parse((await host.getAttribute('data-read-frame'))!).viewport[0]).toBeLessThan(1440);await check();await page.screenshot({path:info.outputPath('short-editor.png')})
 })
 
