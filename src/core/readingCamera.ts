@@ -9,7 +9,9 @@ export function panLimits(b:ReadingBounds,z:number){
  // its two edges to the viewport. Coordinates are relative to viewport center.
  const x=b.width/2,y=b.height/2
  const topLimit=-y+(b.safeTop??0),bottomLimit=y-(b.safeBottom??0),fits=bottom-top<=bottomLimit-topLimit
- const center=b.safeTop!==undefined?(topLimit+bottomLimit-top-bottom)/2:0
+ const offset=b.safeTop!==undefined?(topLimit+bottomLimit-top-bottom)/2:0
+ // Fit math may leave a subpixel floating-point remainder at the reset pose.
+ const center=Math.abs(offset)<1e-9?0:offset
  return {minX:right-left<=b.width?0:x-right,maxX:right-left<=b.width?0:-x-left,minY:fits?center:bottomLimit-bottom,maxY:fits?center:topLimit-top}
 }
 export function clampReadingView(v:ReadingView,b:ReadingBounds):ReadingView{
