@@ -2,6 +2,8 @@ import * as T from 'three'
 import type {BookConfig} from './schema'
 import {clamp} from './pagePhysics'
 import {makeChain,rollPoint} from './pageChain'
+import {createGpuPage} from './pageGpu'
+import type {ActiveLeaf} from './pageWindow'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -69,12 +71,20 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
 export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void){
   let config=c
   const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshStandardMaterial({roughness:.94})),right=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshStandardMaterial({roughness:.94}))
-  const geometry=createCurlGeometry(w,h)
-  const front=new T.MeshStandardMaterial({roughness:.94,side:T.FrontSide}),back=new T.MeshStandardMaterial({roughness:.94,side:T.BackSide})
-  const leaf=new T.Group(),frontMesh=new T.Mesh(geometry,front),backMesh=new T.Mesh(geometry,back)
-  left.name='Reading page left';right.name='Reading page right';frontMesh.name=backMesh.name='Turning page';leaf.add(frontMesh,backMesh);root.add(leaf);leaf.visible=false
-  for(const mesh of [left,right,frontMesh,backMesh]){mesh.castShadow=true;mesh.receiveShadow=true}
-  backMesh.castShadow=false
+  const slots:Array<{leaf:T.Group;front:T.MeshStandardMaterial;back:T.MeshStandardMaterial;gpu:ReturnType<typeof createGpuPage>}>=[]
+  left.name='Reading page left';right.name='Reading page right'
+  for(const mesh of [left,right]){mesh.castShadow=true;mesh.receiveShadow=true}
+  function slot(i:number){
+    if(slots[i])return slots[i]
+    const geometry=createCurlGeometry(w,h),gpu=createGpuPage(w,h)
+    const front=new T.MeshStandardMaterial({roughness:.94,side:T.FrontSide}),back=new T.MeshStandardMaterial({roughness:.94,side:T.BackSide})
+    gpu.attach(front);gpu.attach(back)
+    const leaf=new T.Group(),fm=new T.Mesh(geometry,front),bm=new T.Mesh(geometry,back)
+    fm.name=bm.name='Turning page';fm.castShadow=true;fm.receiveShadow=bm.receiveShadow=true
+    fm.customDepthMaterial=gpu.depth;fm.frustumCulled=bm.frustumCulled=false
+    leaf.add(fm,bm);root.add(leaf);leaf.visible=false
+    const value={leaf,front,back,gpu};slots.push(value);return value
+  }
   const keys=new Map<T.MeshStandardMaterial,string>()
   function assign(mat:T.MeshStandardMaterial,index:number,flip=false){
     const key=index+':'+flip
@@ -86,17 +96,17 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed)keys.clear()
     config=next
   }
-  function pose(index:number,count:number,active:{direction:1|-1;progress:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}|null,curl:number){
-    const faces=pageFaces(index,count)
-    if(active){
-      const moving=turnFaces(index,active.direction)
-      const next=pageFaces(index+active.direction,count)
-      assign(left.material,active.direction===-1?next.left:faces.left)
-      assign(right.material,active.direction===1?next.right:faces.right)
-      assign(front,moving.front);assign(back,moving.back,true)
-      deformPage(geometry,w,h,active.direction===1?active.progress:1-active.progress,curl,active.grip??0,config.pageCorner,active.velocity??0,active.curlAmount??0,active.grabU??1)
-      leaf.visible=true
-    }else{assign(left.material,faces.left);assign(right.material,faces.right);leaf.visible=false}
+  function pose(index:number,count:number,active:ActiveLeaf[],curl:number){
+    const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*active.length,count)
+    assign(left.material,direction===-1?next.left:faces.left)
+    assign(right.material,direction===1?next.right:faces.right)
+    active.forEach((a,i)=>{
+      const s=slot(i),moving=turnFaces(index+direction*i,direction)
+      assign(s.front,moving.front);assign(s.back,moving.back,true)
+      s.gpu.update(direction===1?a.progress:1-a.progress,curl,a.curlAmount??0,a.grip??0,a.grabU??1)
+      s.leaf.visible=true
+    })
+    for(let i=active.length;i<slots.length;i++)slots[i].leaf.visible=false
   }
-  return {root,left,right,leaf,update,pose}
+  return {root,left,right,slots,update,pose,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
 }
