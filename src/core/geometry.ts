@@ -9,7 +9,10 @@ export function skinWeights(x:number,width:number){
 export function bookDimensions(width:number,height:number,thickness:number,boardThickness:number,pageInset:number){
   const w=width/100,h=height/100,d=thickness/100,t=boardThickness/100
   const inset=pageInset/100
-  return {w,h,d,t,inset,pageWidth:w-2*inset,pageHeight:h-2*inset,pageDepth:d-2*t,coverZ:(d-t)/2}
+  // Reference STACK_COVER_CLEAR_X=.02 in model width 15.6. Keep the
+  // editor's inset on the fore-edge/head/tail, not on the binding edge.
+  const gutterInset=Math.min(inset,w*.02/15.6),pageWidth=w-inset-gutterInset,pageCenter=(gutterInset-inset)/2
+  return {w,h,d,t,inset,gutterInset,pageWidth,pageCenter,pageHeight:h-2*inset,pageDepth:d-2*t,coverZ:(d-t)/2}
 }
 export function openingPose(degrees:number,flex:number,coupling:number){
   const open=T.MathUtils.clamp(degrees,0,180)

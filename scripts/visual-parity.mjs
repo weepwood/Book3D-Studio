@@ -32,9 +32,15 @@ await record('Stripe Press source browse',async()=>{
 })
 await record('Stripe Press open book',async()=>{
  // Public landing page contains Open book; exact interaction/edition may vary.
- const open=source.getByText(/Open book\s*\[\+\]/i).first()
- await open.waitFor({state:'visible',timeout:15000})
- await open.click({timeout:15000});await source.waitForTimeout(800)
+ const open=source.getByRole('button',{name:/^Open book:/i}).filter({visible:true}).first()
+ await open.waitFor({state:'visible',timeout:30000})
+ // The featured carousel animates its button: Playwright's stable-element
+ // gate can time out. Force still sends a real pointer click, not JS state.
+ await open.click({timeout:15000,force:true})
+ await source.getByRole('button',{name:/Close book|Close preview|Close reader/i}).filter({visible:true}).first().waitFor({state:'visible',timeout:30000}).catch(async()=>{
+   const close=source.locator('[data-home-corner="close"]').filter({visible:true}).first();await close.waitFor({state:'visible',timeout:10000})
+ })
+ await source.waitForTimeout(800)
  await shot(source,'reference-opening-early')
  await source.waitForTimeout(2700);await shot(source,'reference-after-open')
  await source.waitForTimeout(6500);await shot(source,'reference-open-late')

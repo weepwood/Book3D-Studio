@@ -10,6 +10,7 @@ describe('参数化几何',()=>{
     expect(d.coverZ+d.t/2).toBeCloseTo(d.d/2)
     expect(d.pageWidth).toBeGreaterThan(0)
   })
+  it('装订侧独立于外缘内缩并保持纸面边界',()=>{for(const inset of [1,2.5,4]){const d=bookDimensions(150,220,32,2.5,inset);expect(d.gutterInset).toBeCloseTo(1.5*.02/15.6);expect(d.pageCenter-d.pageWidth/2).toBeCloseTo(-d.w/2+d.gutterInset);expect(d.pageCenter+d.pageWidth/2).toBeCloseTo(d.w/2-d.inset)}})
   it('连续蒙皮权重归一化并且索引有效',()=>{
     for(let i=0;i<=200;i++){
       const {indices,weights}=skinWeights(i/200,1)

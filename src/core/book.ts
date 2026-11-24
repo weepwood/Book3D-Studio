@@ -57,7 +57,7 @@ function bump(){
 }
 export function createBook(c:BookConfig, invalidate:()=>void){
   const root=new T.Group()
-  const {w,h,d,t,inset,pageWidth,pageHeight,pageDepth,coverZ}=bookDimensions(c.width,c.height,c.thickness,c.boardThickness,c.pageInset)
+  const {w,h,d,t,inset,gutterInset,pageWidth,pageCenter,pageHeight,pageDepth,coverZ}=bookDimensions(c.width,c.height,c.thickness,c.boardThickness,c.pageInset)
   const radius=c.cornerRadius/100
   const coverMap=cover(c);coverMap.userData.invalidate=invalidate
   const cloth=c.finish==='cloth'?bump():null
@@ -74,15 +74,15 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   back.name='Back cover'
   const pageMaterials=[edgeV,edgeV,edgeH,edgeH,inside,inside]
   const lowerShape=createStackGeometry(pageWidth,pageHeight),upperShape=createStackGeometry(pageWidth,pageHeight)
-  const lower=mesh(lowerShape.g,pageMaterials,root,0,0,0)
+  const lower=mesh(lowerShape.g,pageMaterials,root,pageCenter,0,0)
   lower.name='Unread page block'
   const pagePivot=new T.Group();root.add(pagePivot)
-  const upper=mesh(upperShape.g,pageMaterials,pagePivot,inset+pageWidth/2,0,0)
+  const upper=mesh(upperShape.g,pageMaterials,pagePivot,gutterInset+pageWidth/2,0,0)
   upper.name='Read page block'
   const pages=createPageLayer(pageWidth,pageHeight,c,invalidate)
   root.add(pages.root,pages.right);pagePivot.add(pages.left)
-  pages.right.position.set(0,0,0)
-  pages.left.rotation.y=Math.PI;pages.left.position.x=inset+pageWidth/2
+  pages.right.position.set(pageCenter,0,0)
+  pages.left.rotation.y=Math.PI;pages.left.position.x=gutterInset+pageWidth/2
   const outerBinding=createBindingGeometry(h),innerBindingShape=createBindingGeometry(h-2*radius,true)
   spineFace.side=T.DoubleSide
   const lining=new T.MeshStandardMaterial({color:c.paperColor,roughness:.95,side:T.DoubleSide})
@@ -116,8 +116,8 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     pages.pose(readingIndex,count,active,current.pageCurl)
     active.forEach((turn,i)=>{
       const turnP=direction===1?turn.progress:1-turn.progress,depths=block?chunkDepths(layout):leafDepths(layout,direction,i)
-      const from={x:-w/2+inset,z:base+depths.right+.002}
-      const lx=inset,lz=-t/2-depths.left-.002,a=pagePivot.rotation.y
+      const from={x:-w/2+gutterInset,z:base+depths.right+.002}
+      const lx=gutterInset,lz=-t/2-depths.left-.002,a=pagePivot.rotation.y
       const to={x:pagePivot.position.x+lx*Math.cos(a)+lz*Math.sin(a),z:pagePivot.position.z-lx*Math.sin(a)+lz*Math.cos(a)}
       const anchor=anchorBetween(from,to,turnP),slot=pages.slots[i],leaf=slot.leaf
       const right=surfaceChain(pageWidth,rightAngle,depths.right/2),left=surfaceChain(pageWidth,-leftAngle,-depths.left/2)

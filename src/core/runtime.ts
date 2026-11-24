@@ -2,6 +2,7 @@ import * as T from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
+import { bookDimensions } from './geometry'
 import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
@@ -206,7 +207,7 @@ export class BookRuntime {
       }
       if(active){this.host.dataset.pointerPick='active';return {...active,progress:this.turn?.progress??active.progress,travelX:-active.direction*b.width*.5,travelY:0,regrab:true}}
       if(!this.turn||this.turn.preview){const group=this.findGroup(x,y);if(group){this.host.dataset.pointerPick='group';return {...group,travelX:-group.direction*b.width*.5,travelY:0,regrab:false}}}
-    }const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;if(physical)this.host.dataset.pointerPick='page';const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=(this.config.width-2*this.config.pageInset)/100;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,progress:0,group:1,regrab:false,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
+    }const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;if(physical)this.host.dataset.pointerPick='page';const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=bookDimensions(this.config.width,this.config.height,this.config.thickness,this.config.boardThickness,this.config.pageInset).pageWidth;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,progress:0,group:1,regrab:false,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
   pageSide(x:number,y:number){return this.pageHit(x,y)?.direction??null}
   hitTest(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height)return false;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray.intersectObject(this.book.root,true).length>0}
   capture(){this.renderer.render(this.scene,this.camera);return this.renderer.domElement.toDataURL('image/png')}
