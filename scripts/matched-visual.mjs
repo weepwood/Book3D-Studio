@@ -2,7 +2,7 @@ import {chromium} from '@playwright/test'
 import {mkdir,writeFile,readFile} from 'node:fs/promises'
 const dir='matched-visual',fixture=await readFile(new URL('./fixtures/visual-book.json',import.meta.url))
 await mkdir(dir,{recursive:true})
-const browser=await chromium.launch({args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']})
+const browser=await chromium.launch({executablePath:process.env.BOOK3D_CHROMIUM_EXECUTABLE||undefined,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']})
 const report=[]
 try{
  for(const [name,url] of [['v0.6.0',process.env.BASELINE_URL],['candidate',process.env.LOCAL_URL]]){
@@ -24,7 +24,7 @@ try{
        }
      })
    })
-   await page.goto(url);await page.locator('.canvas-host canvas').waitFor()
+   console.log('Capturing '+name+' '+url);await page.goto(url);try{await page.locator('.canvas-host canvas').waitFor()}catch(e){await page.screenshot({path:dir+'/'+name+'-startup-error.png'});throw Error(name+' startup failed: '+errors.join('; ')+' '+await page.locator('body').innerText(),{cause:e})}
    await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'visual-book.json',mimeType:'application/json',buffer:fixture})
    await page.waitForTimeout(1200)
    const host=page.locator('.canvas-host')
