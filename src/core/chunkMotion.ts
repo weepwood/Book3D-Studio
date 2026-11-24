@@ -6,6 +6,11 @@ export const CHUNK_TEXTURE_TIMEOUT=1200
 export const CHUNK_LANDED_FRAMES=4
 const smooth=(a:number,b:number,x:number)=>{const t=clamp((x-a)/(b-a));return t*t*(3-2*t)}
 export const newChunkMotion=(gesture:boolean,progress=0,lift=0,cornerCurl=0):ChunkMotion=>({phase:progress>0?(gesture?'gather':'turn'):'prepare',gesture,visible:progress>0,progress,lift,waitMs:0,elapsedMs:0,landedFrames:0,goal:null,handoff:gesture&&progress<.02,handoffCurl:gesture&&progress<.02?Math.max(0,cornerCurl):0,handoffFrames:0})
+// Regrabbing a rendered block must not restart texture preparation or
+// recreate an already-decayed handoff leaf. Keep the actual visible pose.
+export function regrabChunkMotion(previous:ChunkMotion):ChunkMotion{
+ return {...previous,gesture:true,phase:previous.visible?'gather':'prepare',goal:null,landedFrames:0,elapsedMs:0}
+}
 export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dragging:boolean,target:number,goal:0|1){
  dt=clamp(dt,0,.25)
  const approach=(v:number,t:number,k:number)=>v+(t-v)*(1-Math.exp(-k*dt))
