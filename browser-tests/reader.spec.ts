@@ -9,6 +9,7 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
  await expect(host).toHaveAttribute('data-page-gpu','chain-texture')
+ await expect(host).toHaveAttribute('data-stack-geometry','layered')
  const pick=JSON.parse((await host.getAttribute('data-right-pick'))!) as [number,number]
  await page.mouse.move(...pick)
  await expect(host).toHaveAttribute('data-page-turn','preview')

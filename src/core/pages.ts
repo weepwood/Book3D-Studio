@@ -70,7 +70,7 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
 }
 export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void){
   let config=c
-  const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshStandardMaterial({roughness:.94})),right=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshStandardMaterial({roughness:.94}))
+  const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h,48,1),new T.MeshStandardMaterial({roughness:.94})),right=new T.Mesh(new T.PlaneGeometry(w,h,48,1),new T.MeshStandardMaterial({roughness:.94}))
   const slots:Array<{leaf:T.Group;front:T.MeshStandardMaterial;back:T.MeshStandardMaterial;gpu:ReturnType<typeof createGpuPage>}>=[]
   left.name='Reading page left';right.name='Reading page right'
   for(const mesh of [left,right]){mesh.castShadow=true;mesh.receiveShadow=true}

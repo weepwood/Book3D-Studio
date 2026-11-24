@@ -13,3 +13,5 @@
 src/core/pressReference.ts 原版证据参数；pageChain.ts CPU 参考；pageGpu.ts GPU；pageWindow.ts 活动窗口；pagePhysics.ts 控制；pages.ts 与 book.ts 组装；runtime.ts 渲染交互；browser-tests/reader.spec.ts WebGL 验收。
 
 V0.4.2 追加：局部悬停 GPU 卷曲、三层书芯偏移曲线采样；待原版坐标对照后接入静止书芯。PR #6 首轮 33/33 单测通过，浏览器瞬时并发断言失败；已改用同批 UI 输入 + 活动叶峰值回归，并新增悬停测试。
+
+V0.5 分支 feat/v0.5-reference-integration：PR #6 已合并（73b20b0），35 单元测试及 Chromium 通过、Pages 成功。P0/P1 集中推进：真实曲面书芯、统一活动页端点、封面/落页时间、重新抓取和边缘成组、原版光照配置、参考站对照脚本。仍需视觉验收，不宣称 1:1，详见 docs/stripe-press-parity.md。
