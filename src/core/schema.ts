@@ -18,6 +18,19 @@ export type BookConfig = {
   finish: 'cloth' | 'matte' | 'gloss'
   roughness: number
   coverImage: string
+  backImage: string
+  spineImage: string
+  backText: string
+  spineText: string
+  coverZoom: number
+  coverX: number
+  coverY: number
+  backZoom: number
+  backX: number
+  backY: number
+  spineZoom: number
+  spineX: number
+  spineY: number
   opening: number
   yaw: number
   pitch: number
@@ -30,12 +43,14 @@ export const defaults: BookConfig = {
   author: 'STUDIO EDITIONS', width: 150, height: 220, thickness: 32, boardThickness: 2.5, cornerRadius: 1.2, pageInset: 2.5,
   spineStyle: 'rounded', coverFlex: .28, pageCoupling: .45,
   coverColor: '#354d40', paperColor: '#e8dfca', inkColor: '#dec48d',
-  finish: 'cloth', roughness: 0.68, coverImage: '', opening: 0, yaw: -28, pitch: 12,
+  finish: 'cloth', roughness: 0.68, coverImage: '', backImage:'', spineImage:'', backText:'', spineText:'',
+  coverZoom:1, coverX:0, coverY:0, backZoom:1, backX:0, backY:0, spineZoom:1, spineX:0, spineY:0, opening: 0, yaw: -28, pitch: 12,
   light: 3, background: '#e9e7df', interaction: 'click'
 }
 export const ranges = {
   width:[90,250], height:[120,320], thickness:[8,80],
   boardThickness:[.8,3], cornerRadius:[0,4], pageInset:[1,4], coverFlex:[0,1], pageCoupling:[0,1],
+  coverZoom:[1,3], coverX:[-1,1], coverY:[-1,1], backZoom:[1,3], backX:[-1,1], backY:[-1,1], spineZoom:[1,3], spineX:[-1,1], spineY:[-1,1],
   roughness:[0.05,1], opening:[0,150], yaw:[-180,180], pitch:[-65,65], light:[0.2,6]
 } as const
 export function parseConfig(raw: unknown): BookConfig {
@@ -49,7 +64,7 @@ export function parseConfig(raw: unknown): BookConfig {
     if(typeof x !== 'number' || !Number.isFinite(x) || x < min || x > max) throw new Error('无效参数: '+k)
     out[k] = x
   }
-  for(const k of ['title','subtitle','author'] as const) {
+  for(const k of ['title','subtitle','author','backText','spineText'] as const) {
     const x = v[k] ?? defaults[k]
     if(typeof x !== 'string' || x.length > 160) throw new Error('无效文字')
     out[k] = x
@@ -71,10 +86,10 @@ export function parseConfig(raw: unknown): BookConfig {
     if(v.interaction !== 'orbit' && v.interaction !== 'hover' && v.interaction !== 'click') throw new Error('无效交互')
     out.interaction = v.interaction
   }
-  if(v.coverImage !== undefined) {
-    if(typeof v.coverImage !== 'string' || v.coverImage.length > 12_000_000 ||
-      (v.coverImage !== '' && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v.coverImage))) throw new Error('仅支持内嵌 PNG、JPEG、WebP 图片')
-    out.coverImage = v.coverImage
+  for(const k of ['coverImage','backImage','spineImage'] as const){
+    const image=v[k]??''
+    if(typeof image !== 'string' || image.length > 12_000_000 || (image !== '' && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image))) throw new Error('仅支持内嵌 PNG、JPEG、WebP 图片')
+    out[k]=image
   }
   return out
 }

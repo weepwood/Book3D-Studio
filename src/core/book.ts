@@ -12,13 +12,15 @@ function canvas(w:number,h:number) {
   const ctx=el.getContext('2d'); if(!ctx) throw new Error('Canvas unavailable')
   return {el,ctx}
 }
-function cover(c:BookConfig) {
-  const {el,ctx}=canvas(768,Math.round(768*c.height/c.width))
+function cover(c:BookConfig,face:'cover'|'back'|'spine'='cover') {
+  const width=face==='spine'?Math.max(64,Math.round(1024*c.thickness/c.height)):768
+  const {el,ctx}=canvas(width,face==='spine'?1024:Math.round(768*c.height/c.width))
   ctx.fillStyle=c.coverColor;ctx.fillRect(0,0,el.width,el.height)
   if(c.finish==='cloth'){
     for(let x=0;x<el.width;x+=3){ctx.fillStyle=x%2?'#ffffff0c':'#00000010';ctx.fillRect(x,0,1,el.height)}
     for(let y=0;y<el.height;y+=3){ctx.fillStyle='#ffffff08';ctx.fillRect(0,y,el.width,1)}
   }
+  if(face==='cover'){
   ctx.strokeStyle=c.inkColor;ctx.lineWidth=2;ctx.strokeRect(42,42,el.width-84,el.height-84)
   ctx.fillStyle=c.inkColor;ctx.textAlign='center'
   ctx.font='21px sans-serif';ctx.fillText(c.subtitle,el.width/2,el.height*.18,el.width-130)
@@ -28,9 +30,12 @@ function cover(c:BookConfig) {
   if(line)lines.push(line);lines=lines.slice(0,6)
   lines.forEach((s,i)=>ctx.fillText(s,el.width/2,el.height*.46+(i-(lines.length-1)/2)*85,el.width-140))
   ctx.font='20px sans-serif';ctx.fillText(c.author,el.width/2,el.height*.84,el.width-130)
+  }else{ctx.fillStyle=c.inkColor;ctx.textAlign='center';ctx.textBaseline='middle';if(face==='spine'){ctx.translate(el.width/2,el.height/2);ctx.rotate(-Math.PI/2);ctx.font='bold '+Math.min(42,el.width*.62)+'px Georgia';ctx.fillText(c.spineText||c.title,0,0,el.height*.85);ctx.setTransform(1,0,0,1,0,0)}else{ctx.font='28px Georgia';ctx.fillText(c.backText,el.width/2,el.height*.5,el.width*.86)}}
   const map=texture(el)
-  if(c.coverImage){
-    const img=new Image();img.onload=()=>{if(map.userData.disposed)return;const ratio=Math.max(el.width/img.width,el.height/img.height);const w=img.width*ratio,h=img.height*ratio;ctx.drawImage(img,(el.width-w)/2,(el.height-h)/2,w,h);map.needsUpdate=true;map.userData.invalidate?.()};img.src=c.coverImage
+  const image=c[face+'Image' as 'coverImage'|'backImage'|'spineImage']
+  const zoom=c[face+'Zoom' as 'coverZoom'|'backZoom'|'spineZoom'],x=c[face+'X' as 'coverX'|'backX'|'spineX'],y=c[face+'Y' as 'coverY'|'backY'|'spineY']
+  if(image){
+    const img=new Image();img.onload=()=>{if(map.userData.disposed)return;const ratio=Math.max(el.width/img.width,el.height/img.height)*zoom;const w=img.width*ratio,h=img.height*ratio;ctx.drawImage(img,(el.width-w)*(1+x)/2,(el.height-h)*(1+y)/2,w,h);map.needsUpdate=true;map.userData.invalidate?.()};img.src=image
   }
   return map
 }
@@ -52,13 +57,14 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   const cloth=c.finish==='cloth'?bump():null
   const board=new T.MeshPhysicalMaterial({color:c.coverColor,roughness:c.roughness,bumpMap:cloth,bumpScale:cloth ? .006 : 0,clearcoat:c.finish==='gloss'?.85:0,clearcoatRoughness:.18})
   const front=board.clone();front.color.set('#ffffff');front.map=coverMap
+  const rear=board.clone(),spineFace=board.clone();rear.color.set('#ffffff');spineFace.color.set('#ffffff');rear.map=cover(c,'back');spineFace.map=cover(c,'spine');rear.map.userData.invalidate=invalidate;spineFace.map.userData.invalidate=invalidate
   const inside=new T.MeshStandardMaterial({color:c.paperColor,roughness:.95})
   const edgeV=new T.MeshStandardMaterial({map:paper(c.paperColor,true),roughness:.95})
   const edgeH=new T.MeshStandardMaterial({map:paper(c.paperColor,false),roughness:.95})
   function mesh(g:T.BufferGeometry,m:T.Material|T.Material[],parent:T.Object3D,x:number,y:number,z:number){
     const o=new T.Mesh(g,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o
   }
-  const back=mesh(boardGeometry(w,h,t,radius),[board,board,board,board,inside,board],root,-w/2,0,-coverZ)
+  const back=mesh(boardGeometry(w,h,t,radius),[board,board,board,board,inside,rear],root,-w/2,0,-coverZ)
   back.name='Back cover'
   const pageMaterials=[edgeV,edgeV,edgeH,edgeH,inside,inside]
   const half=pageDepth/2
@@ -68,22 +74,36 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   const upper=mesh(new T.BoxGeometry(pageWidth,pageHeight,half),pageMaterials,pagePivot,pageWidth/2,0,half/2)
   upper.name='Front page block'
   const spineWidth=Math.min(.075,Math.max(.027,inset*1.4))
-  const spine=mesh(new RoundedBoxGeometry(spineWidth,h,d,4,c.spineStyle==='rounded'?Math.min(spineWidth*.49,d*.24):.002),board,root,-w/2+spineWidth*.42,0,0)
+  const spine=mesh(new RoundedBoxGeometry(spineWidth,h,d,4,c.spineStyle==='rounded'?Math.min(spineWidth*.49,d*.24):.002),[board,spineFace,board,board,board,board],root,-w/2+spineWidth*.42,0,0)
   spine.name='Spine'
   const hinge=new T.Group();hinge.position.set(-w/2,0,coverZ);root.add(hinge)
   const rig=skinnedBoard(w,h,t,radius,[board,board,board,board,front,inside])
   rig.mesh.name='Front cover';rig.mesh.castShadow=true;rig.mesh.receiveShadow=true;hinge.add(rig.mesh)
   let last=-1
+  let current=c
   const setOpening=(deg:number)=>{
     if(deg===last)return
     last=deg
-    const pose=openingPose(deg,c.coverFlex,c.pageCoupling)
+    const pose=openingPose(deg,current.coverFlex,current.pageCoupling)
     hinge.rotation.y=pose.hinge;pagePivot.rotation.y=pose.page
     rig.bones.forEach((bone,i)=>{bone.rotation.y=i===0?0:pose.bone})
     root.updateMatrixWorld(true);rig.mesh.computeBoundingSphere();rig.mesh.computeBoundingBox()
   }
   setOpening(0)
-  return {root,hinge,setOpening,dispose:()=>{rig.skeleton.dispose();disposeTree(root)}}
+  const updateAppearance=(next:BookConfig)=>{
+    const previous=current;current=next
+    if(previous.coverFlex!==next.coverFlex||previous.pageCoupling!==next.pageCoupling){const angle=last;last=-1;setOpening(angle)}
+    const keys=['coverColor','inkColor','title','subtitle','author','finish'] as const
+    const common=keys.some(k=>previous[k]!==next[k])
+    for(const [face,mat] of [['cover',front],['back',rear],['spine',spineFace]] as const){
+      const fields=([face+'Image',face+'Zoom',face+'X',face+'Y',face+'Text'] as (keyof BookConfig)[])
+      if(common||fields.some(k=>previous[k]!==next[k])){if(mat.map){mat.map.userData.disposed=true;mat.map.dispose()}mat.map=cover(next,face);mat.map.userData.invalidate=invalidate;mat.needsUpdate=true}
+    }
+    if(previous.finish!==next.finish){const old=board.bumpMap;const nextBump=next.finish==='cloth'?bump():null;for(const m of [board,front,rear,spineFace]){m.bumpMap=nextBump;m.bumpScale=nextBump ? .006:0;m.clearcoat=next.finish==='gloss'?.85:0;m.needsUpdate=true}old?.dispose()}
+    board.color.set(next.coverColor);for(const m of [board,front,rear,spineFace])m.roughness=next.roughness
+    if(previous.paperColor!==next.paperColor){inside.color.set(next.paperColor);for(const [mat,vertical] of [[edgeV,true],[edgeH,false]] as const){mat.map?.dispose();mat.map=paper(next.paperColor,vertical);mat.needsUpdate=true}}
+  }
+  return {root,hinge,setOpening,updateAppearance,dispose:()=>{rig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()
