@@ -154,7 +154,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   }
   function activePickPoint(){const slot=pages.slots[0];if(!slot?.leaf.visible||!activeTurns[0]||activeTurns[0].progress<.12||activeTurns[0].progress>.88)return null;return slot.leaf.localToWorld(slot.gpu.pickPoint(.75,0))}
   function readingPickPoint(){const chain=rightLayers[2];if(!chain)return null;const s=sampleChain(chain,.85);return pages.right.localToWorld(new T.Vector3(s.x-pageWidth/2,0,s.z))}
-  function groupPickPoint(direction:1|-1){const right=direction===1,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,depth=right?rightDepthNow:leftDepthNow,count=right?rightCount:leftCount;if(count<2||!layers.length||!mesh.visible)return null;const chain=layers[1],a=sampleChain(chain,.85);return mesh.localToWorld(new T.Vector3(a.x-pageWidth/2,-pageHeight/2,(right?1:-1)*a.z))}
+  function groupPickCandidates(direction:1|-1){const right=direction===1,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount;if(count<2||!layers.length||!mesh.visible)return [];const chain=layers[1],out:T.Vector3[]=[];for(const u of [.85,.65,.45]){const a=sampleChain(chain,u);for(const y of [-pageHeight/2,pageHeight/2])out.push(mesh.localToWorld(new T.Vector3(a.x-pageWidth/2,y,(right?1:-1)*a.z)))}const a=sampleChain(chain,1);for(const y of [0,-pageHeight*.3,pageHeight*.3])out.push(mesh.localToWorld(new T.Vector3(a.x-pageWidth/2,y,(right?1:-1)*a.z)));return out}
   function pickActive(ray:T.Raycaster){
     let best:{distance:number;direction:1|-1;grip:number;edge:number;progress:number;group:number;slot:number}|null=null
     const span=activeTurns[0]?.span??1
@@ -169,7 +169,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper].filter(m=>m.visible),false)[0];if(!hit||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const topHit=ray.intersectObjects([pages.left,pages.right],false)[0];if(topHit&&topHit.distance<hit.distance-.001)return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,pickActive,pickGroup,activePickPoint,groupPickPoint,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()

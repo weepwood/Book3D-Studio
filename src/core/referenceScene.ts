@@ -1,7 +1,7 @@
 import {clamp} from './pagePhysics'
 // Observed in module 50016 (12s2cqzsl56ip.js).
 export const PRESS_SCENE={
- coverMs:980,closeMs:1880,openDelayMs:650,pageMs:900,fitFraction:.96,spreadSlack:1.1,zoomMin:.5,zoomMax:2,brakeMs:400,edgeTolerancePx:6,readDragSlopPx:8,paper:{shininess:12.5,reflectivity:.39,specular:[.59,.63,.62],bumpScale:.0505},
+ coverMs:980,closeMs:1880,openDelayMs:650,pageMs:900,fitFraction:.96,spreadSlack:1.1,zoomMin:.5,zoomMax:2,brakeMs:400,brakeLockMs:200,brakeMinAngle:.25,edgeTolerancePx:6,readDragSlopPx:8,paper:{shininess:12.5,reflectivity:.39,specular:[.59,.63,.62],bumpScale:.0505},
  browse:{ambientColor:0xffffff,ambientIntensity:.83,keyColor:0xb3aba2,keyIntensity:3.61,key:[-2.4,3.5,9.9],sunColor:0xaea7a7,sunIntensity:2.63,sun:[22.5,33.5,6.8],shadowHalf:62.1,near:.001,far:256.8,bias:-.00253,normalBias:.0165,radius:6},
  read:{ambientColor:8355194,ambientIntensity:1.4,keyColor:0xf9f6f0,keyIntensity:1.41,key:[9.4,4.6,4.3],sunColor:0xf5f7ff,sunIntensity:1.4,sun:[-15,-15,39.7],shadowHalf:51.9,near:.001,far:256.8,bias:-.00118,normalBias:.0401,radius:9.74},
  shadowMap:2048,mobileShadowMap:512,sourceWidth:15.6
@@ -18,3 +18,5 @@ export function groupCount(available:number,depthFromTop:number){return Math.max
 export function chunkRelease(progress:number,goal:number,dt:number){const delta=goal-progress,step=Math.max(Math.abs(delta)*(1-Math.exp(-7*dt)),.9*dt);return Math.abs(delta)<=step?goal:progress+Math.sign(delta)*step}
 export function chunkDuration(count:number){return Math.min(1100,Math.max(700,700+45*Math.log2(Math.max(1,count))))}
 export function chunkAutoProgress(elapsed:number,count:number){const t=clamp((elapsed-120)/chunkDuration(count));return t>=1?1:elapsed<=120?0:.03+.87*(.5-Math.sin(Math.asin(1-2*(.5-.5*Math.cos(Math.PI*t)))/3))}
+
+export function isBrakeable(progress:number){const a=clamp(progress)*Math.PI;return a>PRESS_SCENE.brakeMinAngle&&a<Math.PI-PRESS_SCENE.brakeMinAngle}

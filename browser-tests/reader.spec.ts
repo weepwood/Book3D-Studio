@@ -50,12 +50,12 @@ test('真实活动页重新抓取与取消',async({page},testInfo)=>{
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
  await page.getByRole('button',{name:'下一页',exact:true}).click()
- // The projected point comes from the same chain used for the GPU surface.
- await expect.poll(async()=>Boolean(await host.getAttribute('data-active-pick')),{timeout:15000}).toBe(true)
- let point=JSON.parse((await host.getAttribute('data-active-pick'))!) as [number,number]
- await page.mouse.move(...point)
- const latest=await host.getAttribute('data-active-pick');if(latest){point=JSON.parse(latest);await page.mouse.move(...point)}
- await page.mouse.down()
+ // Original controller brakes the moving leaves from any valid reading-area
+ // press, rather than requiring a rapidly moving sheet's precise centre.
+ await expect.poll(async()=>Number(await host.getAttribute('data-page-progress')),{timeout:15000}).toBeGreaterThan(.15)
+ const point=JSON.parse((await host.getAttribute('data-right-pick'))!) as [number,number]
+ await page.mouse.move(...point);await page.mouse.down()
+ await expect(host).toHaveAttribute('data-pointer-pick','active')
  await expect(host).toHaveAttribute('data-regrab','true',{timeout:5000})
  await page.mouse.move(point[0]+24,point[1],{steps:3})
  await page.mouse.up()
@@ -71,8 +71,10 @@ test('真实书芯边缘成组拾取与释放',async({page},testInfo)=>{
  const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ await expect.poll(async()=>Boolean(await host.getAttribute('data-group-pick'))).toBe(true)
  const point=JSON.parse((await host.getAttribute('data-group-pick'))!) as [number,number]
- await page.mouse.move(...point);await page.mouse.down();await page.mouse.move(point[0]-90,point[1],{steps:4})
+ await page.mouse.move(...point);await page.mouse.down();
+ await expect(host).toHaveAttribute('data-pointer-pick','group');await page.mouse.move(point[0]-90,point[1],{steps:4})
  await expect.poll(async()=>Number(await host.getAttribute('data-group-drag')),{timeout:5000}).toBeGreaterThan(1)
  const count=Number(await host.getAttribute('data-group-drag'))
  await page.screenshot({path:testInfo.outputPath('edge-group-drag.png')})

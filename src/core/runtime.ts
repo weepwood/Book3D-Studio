@@ -7,7 +7,7 @@ import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
 import {curlTarget} from './pageChain'
 import {desiredBatch,orderedProgress,openingLeaves,activeSpan} from './pageWindow'
-import {PRESS_SCENE,coverProgress,brakeRetention,chunkAutoProgress,chunkRelease} from './referenceScene'
+import {PRESS_SCENE,coverProgress,brakeRetention,chunkAutoProgress,chunkRelease,isBrakeable} from './referenceScene'
 export class BookRuntime {
   private renderer:T.WebGLRenderer
   private scene=new T.Scene()
@@ -26,8 +26,9 @@ export class BookRuntime {
   private brakeElapsed=0
   private readLight=-1
   private readPose=0
-  private lastPicks:{x:number;y:number;direction:1|-1;progress:number;time:number}[]=[]
-  private peakChunk=0
+  private groupProbeKey=''
+  private groupProbe:string=''
+    private peakChunk=0
   private environment:T.WebGLRenderTarget
   private resize:ResizeObserver
   private frame=0
@@ -91,7 +92,7 @@ export class BookRuntime {
     if(this.config.opening<READ_ANGLE||this.reduced.matches){this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=target}
     else if(ready){
       if(this.turn?.preview&&this.index!==target){const d=target>this.index?1:-1;if(this.turn.direction===d)this.turn.preview=false;else this.turn=null;this.hovered=false}
-      if(!this.turn&&this.index!==target){this.lastPicks=[];this.turn=newTurn(target>this.index?1:-1);const n=Math.abs(target-this.index);if(n>6){this.turn.span=n;this.turn.chunkElapsed=0}}
+      if(!this.turn&&this.index!==target){this.turn=newTurn(target>this.index?1:-1);const n=Math.abs(target-this.index);if(n>6){this.turn.span=n;this.turn.chunkElapsed=0}}
       if(this.turn){
         const t=this.turn,commit=target!==this.index&&Math.sign(target-this.index)===t.direction
         if(t.preview){
@@ -99,7 +100,7 @@ export class BookRuntime {
           t.curlAmount+=(aim-t.curlAmount)*(1-Math.pow(this.hovered?.94:.95,dt*60))
           if(Math.abs(t.curlAmount-aim)<.01){t.curlAmount=aim;if(!this.hovered)this.turn=null}
         }else if(this.dragging){
-          const prev=t.progress;if(this.regrab&&this.brakeElapsed<PRESS_SCENE.brakeMs){this.brakeElapsed+=dt*1000;const k=brakeRetention(this.brakeElapsed);t.velocity*=Math.pow(1-k.damping,dt*60);const drift=clamp01(prev+t.velocity*dt*k.drive);t.progress=followDrag(drift,t.dragTarget,dt*(1-k.drive))}else{t.progress=t.span&&t.span>1?prev+(t.dragTarget-prev)*(1-Math.exp(-14*dt)):followDrag(prev,t.dragTarget,dt);t.velocity=dt>0?(t.progress-prev)/dt:0}
+          const prev=t.progress;if(this.regrab&&this.brakeElapsed<PRESS_SCENE.brakeMs){this.brakeElapsed+=dt*1000;const k=brakeRetention(this.brakeElapsed);t.velocity*=Math.pow(1-k.damping,dt*60);const drift=clamp01(prev+t.velocity*dt*k.drive);t.progress=this.brakeElapsed<PRESS_SCENE.brakeLockMs&&Math.abs(t.dragTarget-(t.dragOrigin??0))<.01?drift:followDrag(drift,t.dragTarget,dt*(1-k.drive))}else{t.progress=t.span&&t.span>1?prev+(t.dragTarget-prev)*(1-Math.exp(-14*dt)):followDrag(prev,t.dragTarget,dt);t.velocity=dt>0?(t.progress-prev)/dt:0}
           t.renderProgress=followRender(t.renderProgress,t.progress,dt)
           const aim=curlTarget('drag',t.progress,t.grabU,this.config.pageCorner)
           t.curlAmount+=(aim-t.curlAmount)*(1-Math.pow(.96,dt*60))
@@ -139,7 +140,7 @@ export class BookRuntime {
     this.book.root.position.set(this.config.width/200*this.readPose,0,0).applyEuler(this.book.root.rotation)
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     this.renderer.render(this.scene,this.camera);this.drawing=false
-    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.groupPick=project(this.book.groupPickPoint(1));this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(this.host.dataset.activePick&&this.turn){const [x,y]=JSON.parse(this.host.dataset.activePick) as [number,number];this.lastPicks.push({x,y,direction:this.turn.direction,progress:this.turn.progress,time:performance.now()});this.lastPicks=this.lastPicks.filter(p=>performance.now()-p.time<300).slice(-4)}}
+    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(!this.turn){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.config.pageCount].join(':');if(key!==this.groupProbeKey){this.groupProbeKey=key;this.groupProbe='';for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const ray=this.makeRay(x,y);if(ray&&this.book.pickGroup(ray)){this.groupProbe=json;break}}}this.host.dataset.groupPick=this.groupProbe}}
     if(this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
@@ -151,16 +152,16 @@ export class BookRuntime {
   update(c:BookConfig){
     const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
     const rebuild=keys.some(k=>this.config[k]!==c[k]);this.config={...c}
-    if(rebuild){this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
+    if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
-    if(c.pageHover<=0)this.hovered=false;this.settledIndex=-1;this.apply(c)
+    if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c)
   }
   beginPageDrag(direction:1|-1,grip=0,grabU=1,group=1,regrab=false){
     if(this.config.opening<READ_ANGLE||this.open<179.5||this.openingActive||this.reduced.matches||nextLeaf(this.index,direction,leafCount(this.config))===this.index)return false
     if(regrab){if(!this.turn||this.turn.preview||this.turn.direction!==direction)return false}
     else if(this.turn&&!this.turn.preview||this.index!==this.config.pageIndex)return false
     const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;this.hovered=false;t.grip=grip;t.dragTarget=t.progress;t.grabU=grabU;this.turn=t;this.dragging=true;this.releaseGoal=null
-    this.regrab=regrab;this.brakeElapsed=0;const available=direction===1?leafCount(this.config)-this.index:this.index;this.groupDrag=regrab?(t.span??1)+this.followers.length:Math.max(1,Math.min(group,available));t.chunkElapsed=undefined;t.dragOrigin=t.progress;if(regrab){for(const a of this.followers)a.dragOrigin=a.progress}else if(this.groupDrag>6){t.span=this.groupDrag;this.followers=[]}else{t.span=undefined;this.followers=Array.from({length:this.groupDrag-1},()=>newTurn(direction))}this.invalidate();return true
+    this.regrab=regrab;this.host.dataset.dragAccepted=regrab?'regrab':'new';this.brakeElapsed=0;const available=direction===1?leafCount(this.config)-this.index:this.index;this.groupDrag=regrab?(t.span??1)+this.followers.length:Math.max(1,Math.min(group,available));t.chunkElapsed=undefined;t.dragOrigin=t.progress;if(regrab){for(const a of this.followers)a.dragOrigin=a.progress}else if(this.groupDrag>6){t.span=this.groupDrag;this.followers=[]}else{t.span=undefined;this.followers=Array.from({length:this.groupDrag-1},()=>newTurn(direction))}this.invalidate();return true
   }
   dragPage(progress:number,_velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.turn.grabU=grabU;this.invalidate()}}
   endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??(this.regrab?displacementPx>=5||displacementPx>-5&&t.progress>.5:releaseCommit(displacementPx));const index=accepted?nextLeaf(this.index,t.direction*this.groupDrag,leafCount(this.config)):this.index;this.dragging=false;this.regrab=false;t.velocity=0;this.releaseGoal=accepted?1:0;this.groupDrag=1;this.invalidate();return index}
@@ -180,6 +181,7 @@ export class BookRuntime {
   // Hover only changes local curl, leaving the spine angle at its endpoint.
   previewPage(x:number,y:number){
     if(this.config.opening<READ_ANGLE||this.open<179.5||this.openingActive||this.reduced.matches||this.dragging||this.index!==this.config.pageIndex||this.config.pageHover<=0||this.turn&&!this.turn.preview){this.clearPageHover();return}
+    const edgeRay=this.makeRay(x,y);if(edgeRay&&this.findGroup(x,y)){this.clearPageHover();return}
     const hit=this.pageHit(x,y)
     if(!hit||nextLeaf(this.index,hit.direction,leafCount(this.config))===this.index){this.clearPageHover();return}
     if(!this.turn||this.turn.direction!==hit.direction)this.turn=newTurn(hit.direction,hit.grip,true)
@@ -188,7 +190,23 @@ export class BookRuntime {
   clearPageHover(){if(this.turn?.preview){this.hovered=false;this.invalidate()}}
   fit(){const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.04,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
   setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
-  pageHit(x:number,y:number,physical=false){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||this.open<179.5||this.openingActive)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);if(physical){let active=this.book.pickActive(ray);if(!active&&this.turn&&!this.turn.preview){for(const [dx,dy] of [[-6,0],[6,0],[0,-6],[0,6]]){ray.setFromCamera(new T.Vector2((x+dx-b.left)/b.width*2-1,-(y+dy-b.top)/b.height*2+1),this.camera);active=this.book.pickActive(ray);if(active)break}if(!active&&this.lastPicks.some(p=>performance.now()-p.time<300&&Math.hypot(x-p.x,y-p.y)<=PRESS_SCENE.edgeTolerancePx&&this.turn?.direction===p.direction))active={direction:this.turn.direction,progress:this.turn.progress,group:(this.turn.span??1)+this.followers.length,grip:0,edge:.75,slot:0};ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera)}if(active)return {...active,travelX:-active.direction*b.width*.5,travelY:0,regrab:true};if(!this.turn||this.turn.preview){const group=this.book.pickGroup(ray);if(group)return {...group,travelX:-group.direction*b.width*.5,travelY:0,regrab:false}}}const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=(this.config.width-2*this.config.pageInset)/100;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,progress:0,group:1,regrab:false,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
+  private makeRay(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||x<b.left||x>b.right||y<b.top||y>b.bottom)return null;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray}
+  private findGroup(x:number,y:number){for(const [dx,dy] of [[0,0],[-3,0],[3,0],[0,-3],[0,3],[-6,0],[6,0],[0,-6],[0,6]]){const ray=this.makeRay(x+dx,y+dy);const hit=ray&&this.book.pickGroup(ray);if(hit)return hit}return null}
+  pageHit(x:number,y:number,physical=false){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||this.open<179.5||this.openingActive)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);if(physical){
+      this.host.dataset.pointerPick='miss'
+      let active=this.book.pickActive(ray)
+      if(!active&&this.turn&&!this.turn.preview){
+        for(const [dx,dy] of [[-6,0],[6,0],[0,-6],[0,6]]){const near=this.makeRay(x+dx,y+dy);if(near){active=this.book.pickActive(near);if(active)break}}
+        // Original controller 30239: first resolve the reading area, then
+        // brake ALL moving leaves in (.25, PI-.25), before edge gathering.
+        if(!active&&[this.turn,...this.followers].some(a=>isBrakeable(a.progress))){
+          const area=ray.intersectObjects([...this.book.readingSurfaces],false)[0]
+          if(area?.uv)active={direction:this.turn.direction,progress:this.turn.progress,group:(this.turn.span??1)+this.followers.length,grip:area.uv.y*2-1,edge:area.object===this.book.readingSurfaces[0]?1-area.uv.x:area.uv.x,slot:0}
+        }
+      }
+      if(active){this.host.dataset.pointerPick='active';return {...active,progress:this.turn?.progress??active.progress,travelX:-active.direction*b.width*.5,travelY:0,regrab:true}}
+      if(!this.turn||this.turn.preview){const group=this.findGroup(x,y);if(group){this.host.dataset.pointerPick='group';return {...group,travelX:-group.direction*b.width*.5,travelY:0,regrab:false}}}
+    }const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;if(physical)this.host.dataset.pointerPick='page';const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=(this.config.width-2*this.config.pageInset)/100;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,progress:0,group:1,regrab:false,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
   pageSide(x:number,y:number){return this.pageHit(x,y)?.direction??null}
   hitTest(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height)return false;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray.intersectObject(this.book.root,true).length>0}
   capture(){this.renderer.render(this.scene,this.camera);return this.renderer.domElement.toDataURL('image/png')}
