@@ -42,5 +42,13 @@ V0.6.0 已正式发布，Tag 指向 6efad67，Publish release 45417732302 成功
 ### V0.7 2026-11-24 续接
 PR #14 dcf15b2 四项 CI 均成功。真实 matched-visual artifact 14931978996 已下载并人工检查 v0.6.0/candidate middle、candidate turn：同素材同规格下展开构图显著扩大（候选 fit 投影宽度 93.17%、高度 59.27%），中间跨页左右纸芯各约 0.1437 世界单位，总计 0.2874，物理守恒；底部视觉仍偏薄，纸面颗粒与装订静止曲率仍需对照原站。旧 turn 截图不与逻辑进度同步，不作精确曲率结论。本轮补充装订参数/页数变化的阅读适配缓存失效、场景适配按钮与视口选择同步、真实浏览器回归和同一动画回调内的 canvas 证据。新提交须重新跑 CI，检查同步画面和真实原站截图后方可合并。保留 handoffLeaf、完整原版阴影梯度、真实移动设备为后续专项，不扩大 PDF 范围。
 
+### #14 原站视觉采集复审
+94889f6 的四项 CI 通过，但 artifact 14933663688 实际截图显示目标封面（页码 116–117→118–119 并不能证明展开）。本机 Edge 原站诊断通过公开按钮 scrollIntoViewIfNeeded 后 DOM click，实际截图 /tmp/book3d-source-debug.png 确认为 Nomad Letters 168–169 展开双页。修复脚本取消依赖动态 carousel 坐标的 pointer 激活，记录点击当时的 aria-label，翻页使用公开按钮 DOM click；仍需检查最终真实截图，不能把捕获成功等同于视觉验收。
+
+fa5e4c1 完整复跑仍复现错位：激活 Nomad Letters，但首页轮播切到 Built to Grow 封面，readout 168–169→170–171 仍不能证明展开。已从公开链接确认固定详情路由 /book/nomad-letters；本机 Edge 单独验证固定路由打开及下一页，截图 /tmp/book3d-fixed-route-open.png、/tmp/book3d-fixed-route-next.png，路由与书名一致。采集改用固定详情路由、精确按钮标签、站点菜单 Current book 身份断言；不依赖轮播首页，不放宽人工视觉门禁。新 CI 必须复查。
+
 ### V0.7 书芯交接与设置专项（2026-11-24）
 已复查 #14 94889f6 四项 CI 全绿，artifact 14933917630 实际同步 Canvas 截图可读，v0.6.0 progress=.522839、候选=.404469，不能以不同姿态判断曲率优劣。后续分支 feat/v0.7-settings-and-stack：核实原版 04ud9hjinltfg 模块 handoffLeaf 仅手动块，gather<.02 或 cornerCurlShown>=.02 保留，衰减 .18/帧，原块外侧空白材质、落地清除。独立实现实际厚块表面索引、外侧纸页卷曲及极小防深度冲突偏移；不照搬原版模型，手动起始 curl 用本地 hover 适配。静止纸芯外缘切线放平（独立边界适配）、厚度仍守恒；移动与静止书芯共享程序化两纸缝纹理，未复制原版 edgeArtMap。设置面板局部重置、无损材质预设、数字边界/步长/Escape、跨页直达，不变更 JSON/IndexedDB schema。74 单测/类型/构建通过，本机 Edge 三个针对性真实浏览器测试通过（含手动 >6 叶抓取和返回），已人工检查 chunk-handoff.png。CI 仍采用固定 Chromium；本机可用 BOOK3D_CHROMIUM_EXECUTABLE 指定已安装浏览器。最新四项 CI 与原站/同规格截图必须复核；真实设备及完全相同原版曲率仍未验证，不得宣称 1:1。
+
+### #15 基线同步
+93dbfba 本机 Edge 完整 9/9 浏览器测试通过（192.43s），74 单测通过。#14 固定详情入口 6d69303 已同步至 #15；仅两个交接文档发生追加冲突，保留双方记录，渲染及设置代码未覆盖。新合并提交 CI/截图仍须复验，#14 先合并、#15 后转 main；未到发布门禁不打 Tag。
