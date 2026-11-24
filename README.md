@@ -62,3 +62,5 @@ GitHub Pages：在 Settings → Pages → Build and deployment 中选择 GitHub 
 当前限制：后封面仍固定；书芯为两组动态厚度页块，逐页变形已实现但未模拟完整装订物理；未实现通用网页嵌入导出，JSON 仅可重新导入本工作台；PNG 含场景背景；尚未完成真实设备视觉校准。
 
 翻页专项浏览器测试：安装 Chromium（`npx playwright install chromium`）后运行 `npm run test:browser`。仅核心翻页文件变化时额外触发 Reader smoke，不影响普通文档 PR。
+
+原版对齐专项：详见 [Stripe Press 对照与验收](docs/stripe-press-parity.md)。参考控制器的拖拽和吸附替代自主速度预测；未确认的局部悬停卷曲暂不模拟。原始默认参数与未完成的形变差异明确记录。

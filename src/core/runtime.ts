@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
 import { springStep, type BookConfig } from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
-import {newTurn,stepTurn,releaseCommit,type TurnState} from './pagePhysics'
+import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
 export class BookRuntime {
   private renderer:T.WebGLRenderer
   private scene=new T.Scene()
@@ -21,7 +21,6 @@ export class BookRuntime {
   private velocity=0
   private index=0
   private turn:TurnState|null=null
-  private hoverGoal=0
   private releaseGoal:number|null=null
   private dragging=false
   private settledIndex=-1
@@ -70,21 +69,25 @@ export class BookRuntime {
     if(this.config.opening<READ_ANGLE||this.reduced.matches){this.turn=null;this.dragging=false;this.releaseGoal=null;this.index=target}
     else if(this.open>=179.5){
       if(!this.turn&&this.index!==target)this.turn=newTurn(target>this.index?1:-1)
-      if(this.turn&&!this.dragging){
+      if(this.turn){
         const t=this.turn,commit=target!==this.index&&Math.sign(target-this.index)===t.direction
-        if(commit)t.preview=false
-        const goal=this.releaseGoal??(commit?1:t.preview&&target===this.index?this.hoverGoal:0)
-        const step=stepTurn(t.progress,t.velocity,goal,dt,t.preview ? .38 : this.config.pageDuration)
-        t.progress=step.progress;t.velocity=step.velocity
-        if(step.settled){if(goal===1){this.index=nextLeaf(this.index,t.direction,leafCount(this.config));this.turn=null;this.releaseGoal=null}else if(goal===0){this.turn=null;this.releaseGoal=null}}
+        if(this.dragging){
+          const prev=t.progress;t.progress=followDrag(prev,t.dragTarget,dt);t.velocity=dt>0?(t.progress-prev)/dt:0
+        }else{
+          const goal=this.releaseGoal??(commit?1:0)
+          const step=stepTurn(t.progress,t.velocity,goal,dt,this.config.pageDuration,commit&&Math.abs(target-this.index)>1)
+          t.progress=step.progress;t.velocity=step.velocity
+          if(step.settled){if(goal===1)this.index=nextLeaf(this.index,t.direction,leafCount(this.config));this.turn=null;this.releaseGoal=null}
+        }
+        t.renderProgress=followRender(t.renderProgress,t.progress,dt)
       }
     }
-    if(this.turn||this.settledIndex!==this.index){this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:this.turn.progress,grip:this.turn.grip,velocity:this.turn.velocity}:null);this.settledIndex=this.turn?-1:this.index}
-    this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(this.open>=179.5)
+    if(this.turn||this.settledIndex!==this.index){this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:this.turn.renderProgress,grip:this.turn.grip,velocity:this.turn.velocity}:null);this.settledIndex=this.turn?-1:this.index}
+    this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(this.open>=179.5)
 
     this.book.root.position.set(this.config.width/200*easeTurn(clamp01(this.open/180)),0,0).applyEuler(this.book.root.rotation)
     this.renderer.render(this.scene,this.camera)
-    if(Math.abs(this.open-openingTarget)>0.0001||Math.abs(this.velocity)>0.0001||(!this.dragging&&(this.index!==target||!!this.turn&&(!this.turn.preview||Math.abs(this.turn.progress-this.hoverGoal)>.002||Math.abs(this.turn.velocity)>.025))))this.frame=requestAnimationFrame(this.draw)
+    if(Math.abs(this.open-openingTarget)>0.0001||Math.abs(this.velocity)>0.0001||this.index!==target||!!this.turn)this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
     this.scene.background=new T.Color(c.background);this.light.intensity=c.light
@@ -100,14 +103,12 @@ export class BookRuntime {
     this.settledIndex=-1;this.apply(c)
   }
   beginPageDrag(direction:1|-1,grip=0){if(this.config.opening<READ_ANGLE||this.open<179.5||(this.turn&&!this.turn.preview)||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;t.grip=grip;t.velocity=0;this.turn=t;this.dragging=true;this.releaseGoal=null;this.invalidate();return true}
-  dragPage(progress:number,velocity=0){if(this.dragging&&this.turn){this.turn.progress=clamp01(progress);this.turn.velocity=Math.max(-4,Math.min(4,velocity));this.invalidate()}}
-  endPageDrag(commit:boolean|null=null){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??releaseCommit(t.progress,t.velocity);const index=accepted?nextLeaf(this.index,t.direction,leafCount(this.config)):this.index;this.dragging=false;this.releaseGoal=accepted?1:0;this.invalidate();return index}
-  previewPage(x:number,y:number){if(this.config.opening<READ_ANGLE||this.open<179.5||this.reduced.matches||this.dragging||this.index!==this.config.pageIndex||this.config.pageHover<=0||this.turn&&!this.turn.preview){this.clearPageHover();return}
-    const hit=this.pageHit(x,y);if(!hit||hit.edge<.72||nextLeaf(this.index,hit.direction,leafCount(this.config))===this.index){this.clearPageHover();return}
-    if(!this.turn||this.turn.direction!==hit.direction)this.turn=newTurn(hit.direction,hit.grip,true)
-    this.turn.grip=hit.grip;this.hoverGoal=.06*this.config.pageHover*(hit.edge-.72)/.28;this.invalidate()
-  }
-  clearPageHover(){if(this.turn?.preview){this.hoverGoal=0;this.turn.preview=false;this.invalidate()}}
+  dragPage(progress:number,_velocity=0,grip?:number){if(this.dragging&&this.turn){this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;this.invalidate()}}
+  endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??releaseCommit(displacementPx);const index=accepted?nextLeaf(this.index,t.direction,leafCount(this.config)):this.index;this.dragging=false;t.velocity=0;this.releaseGoal=accepted?1:0;this.invalidate();return index}
+  // Reference hover is a local curl, not a whole-sheet rotation. Keep neutral
+  // until the original chain-space curl is ported and visually verified.
+  previewPage(_x:number,_y:number){}
+  clearPageHover(){}
   fit(){const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*1.08;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.15,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
   setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
   pageHit(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||this.open<179.5)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=(this.config.width-2*this.config.pageInset)/100;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
