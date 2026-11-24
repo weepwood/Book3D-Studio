@@ -70,3 +70,6 @@ PR #7 c1377fa 的真实采集 artifact 14920141980 已人工检查：展开纸�
 
 ## fd7acd3 真实视觉审查
 63 单元、6 浏览器与 capture job 全通过；下载 artifact 14929037629，人工核查九张图：本地闭合/打开/翻页/中间跨页均可见，纸面没有明显 shader 黑屏，但仍显灰且书芯外缘偏薄。原站 late/late-check 实际为封面姿态（The Art of Doing Science and Engineering），Close book 文案不能证明展开，故不作为视觉通过证据。新增本地 WebGL/运行时错误门禁，以及原站公开 Next page/Previous page 与 data-readout=spread 变化检查，额外采集翻页后稳定图。必须人工确认实为展开跨页；不同书籍/相机仍不能做像素级对照。#11 61/61、6/6 已合并至 01eda90。
+
+## ff13630 最终视觉审查及发布收口
+artifact 14932490853 实际解包核查：本地无 WebGL/运行时诊断（local-diagnostics.json=[]），原站 Built to Grow 指针触发，spread 136–137 → 138–139；reference-after-page-control 与 reference-spread-check 确认为展开书籍（仍有在途纸张，不称为完全静止）。本地 middle-spread 无黑屏，书芯比原站平缓、厚度不足、构图和素材不同。local-turn 深色环衬彩色颗粒明显过强，收口新增亮度相关幅度上限 .45*lum 及非负夹取；该上限为独立模型适配，不冒称原版参数。#12 63/63 单元、6/6 Chromium、capture 成功并已合并 d9741af；最新发布候选需重新验收，V0.6 不宣称 1:1。
