@@ -29,3 +29,5 @@ describe('装订收拢与外缘厚度守恒',()=>{
 })
 
 it('展开纸层的外缘切线平顺落地，弧长和厚度仍守恒',()=>{for(const depth of [.02,.14,.28,.55]){const width=1.53,c=bindingCompression(1,.7,width,depth),chain=boundLayer(width,depth,c);expect(chain.tangents[65]).toBeCloseTo(0,8);expect(chain.tangents[64]).toBeCloseTo(1,8);expect(bindingHeight(depth,c)+sampleChain(chain,1).z).toBeCloseTo(depth,4)}})
+
+ it('五层静止书芯在厚书两侧保持同一物理外缘与层间顺序',()=>{for(const depth of [.02,.27,.75]){const w=.88,c=bindingCompression(1,1,w,depth),layers=[0,.25,.5,.75,1].map(f=>boundLayer(w,depth*f,c));for(let i=0;i<=32;i++){let prev=-Infinity;for(let j=0;j<layers.length;j++){const z=bindingHeight(depth*j/4,c)+sampleChain(layers[j],i/32).z;expect(z).toBeGreaterThanOrEqual(prev-1e-8);prev=z}}for(const sign of [1,-1] as const){const g=createStackGeometry(w,3,4);g.pose(layers,depth,sign,c);const p=g.g.getAttribute('position');expect(Array.from(p.array).every(Number.isFinite)).toBe(true);expect(g.g.boundingBox!.max.z-g.g.boundingBox!.min.z).toBeCloseTo(depth,3);g.g.dispose()}}})

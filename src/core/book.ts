@@ -72,7 +72,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   const rearRig=skinnedBoard(w,h,t,radius,[board,board,board,board,inside,rear],'backcover',bindingLip)
   const back=rearRig.mesh;back.name='Back cover';back.position.set(-w/2,0,-coverZ);back.castShadow=back.receiveShadow=true;root.add(back)
   const pageMaterials=[edgeV,edgeV,edgeH,edgeH,inside,inside]
-  const lowerShape=createStackGeometry(pageWidth,pageHeight),upperShape=createStackGeometry(pageWidth,pageHeight)
+  const lowerShape=createStackGeometry(pageWidth,pageHeight,4),upperShape=createStackGeometry(pageWidth,pageHeight,4)
   const lower=mesh(lowerShape.g,pageMaterials,root,pageCenter,0,0)
   lower.name='Unread page block'
   const pagePivot=new T.Group();root.add(pagePivot)
@@ -110,9 +110,9 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     rightCompression=bindingCompression(open*rightDrop,current.pageCoupling,pageWidth,pageDepth)
     const key=[leftDepth,rightDepth,leftCompression,rightCompression].join(':')
     if(key!==stackKey){
-      stackKey=key;leftLayers=[0,.5,1].map(f=>cachedLayer(leftDepth*f,leftCompression));rightLayers=[0,.5,1].map(f=>cachedLayer(rightDepth*f,rightCompression))
+      stackKey=key;leftLayers=[0,.25,.5,.75,1].map(f=>cachedLayer(leftDepth*f,leftCompression));rightLayers=[0,.25,.5,.75,1].map(f=>cachedLayer(rightDepth*f,rightCompression))
       lowerShape.pose(rightLayers,rightDepth,1,rightCompression);upperShape.pose(leftLayers,leftDepth,-1,leftCompression)
-      poseSurface(pages.right.geometry,rightLayers[2],false);poseSurface(pages.left.geometry,leftLayers[2],true)
+      poseSurface(pages.right.geometry,rightLayers[rightLayers.length-1],false);poseSurface(pages.left.geometry,leftLayers[leftLayers.length-1],true)
     }
     pages.right.position.z=base+bindingHeight(rightDepth,rightCompression)+.002
     pages.left.position.z=-t/2-bindingHeight(leftDepth,leftCompression)-.002
@@ -230,7 +230,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     if((turn.span??1)>1&&pages.chunk.visible){const mesh=pages.chunk,g=mesh.geometry,group=g.groups.find(x=>x.materialIndex===(turn.direction===1?4:5));if(!group||!g.index)return null;const pos=g.getAttribute('position'),offset=group.start+Math.floor(group.count/12)*6;const point=new T.Vector3();for(let i=0;i<3;i++)point.add(new T.Vector3().fromBufferAttribute(pos,g.index.getX(offset+i)));return mesh.localToWorld(point.multiplyScalar(1/3))}
     const slot=pages.slots[0];return slot?.leaf.visible?slot.leaf.localToWorld(slot.gpu.pickPoint(.75,0)):null
   }
-  function readingPickPoint(){const chain=rightLayers[2];if(!chain)return null;const s=sampleChain(chain,.85);return pages.right.localToWorld(new T.Vector3(s.x-pageWidth/2,0,s.z))}
+  function readingPickPoint(){const chain=rightLayers[rightLayers.length-1];if(!chain)return null;const s=sampleChain(chain,.85);return pages.right.localToWorld(new T.Vector3(s.x-pageWidth/2,0,s.z))}
   function groupPickCandidates(direction:1|-1){const right=direction===1,mesh=right?lower:upper,count=right?rightCount:leftCount;if(count<2||!mesh.visible)return [];return edgeTriangleCenters(mesh.geometry).map(v=>mesh.localToWorld(v))}
 
   function pickActive(ray:T.Raycaster){
@@ -246,7 +246,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     }
     return best
   }
-  function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2-depth*(right?rightCompression:leftCompression)+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
+  function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2-depth*(right?rightCompression:leftCompression)+sampleChain(layers[layers.length-1],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
   return {root,hinge,collisionSample,meshCollisionSample,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){

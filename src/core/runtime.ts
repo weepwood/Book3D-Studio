@@ -41,6 +41,9 @@ export class BookRuntime {
   private readBase={zoom:1,x:0,y:0}
   private readAutoFit=true
   private orbitReading=false
+  private savedReading:{position:T.Vector3;target:T.Vector3;view:ReadingView;bounds:ReadingBounds|null;base:{zoom:number;x:number;y:number}}|null=null
+  private orbitTransition:{from:T.Vector3;to:T.Vector3;elapsed:number}|null=null
+  private cancelOrbitTransition=()=>{this.orbitTransition=null;this.host.dataset.orbitTransition='idle'}
   private reportedIndex=-1
   private orbitMoving=false
   private contextLost=false
@@ -106,7 +109,7 @@ export class BookRuntime {
     this.camera.position.set(3,2,5)
     this.controls=new OrbitControls(this.camera,this.renderer.domElement)
     this.controls.enablePan=true;this.controls.minDistance=2;this.controls.maxDistance=15;this.controls.enableDamping=true;this.controls.dampingFactor=.12;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.zoomToCursor=true
-    this.controls.addEventListener('change',this.invalidate)
+    this.controls.addEventListener('change',this.invalidate);this.controls.addEventListener('start',this.cancelOrbitTransition)
     this.light.position.set(-3,5,5);this.light.castShadow=true
     const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.light.shadow.mapSize.set(size,size)
     Object.assign(this.light.shadow.camera,{left:-5,right:5,top:5,bottom:-5,far:20})
@@ -141,6 +144,7 @@ export class BookRuntime {
     const openingTarget=this.config.opening>=READ_ANGLE?180:this.config.opening
     this.orbitMoving=this.controls.enabled&&this.controls.update()
     const dt=Math.min(.25,Math.max(0,(now-this.last)/1000));this.last=now
+    if(this.orbitTransition){const a=this.orbitTransition;a.elapsed+=dt;const t=Math.min(1,a.elapsed/.28),e=t*t*(3-2*t),q=new T.Quaternion().setFromUnitVectors(a.from.clone().normalize(),a.to.clone().normalize());const dir=a.from.clone().normalize().applyQuaternion(new T.Quaternion().slerp(q,e));this.camera.position.copy(this.controls.target).addScaledVector(dir,T.MathUtils.lerp(a.from.length(),a.to.length(),e));this.controls.update();if(t===1)this.cancelOrbitTransition()}
     if(this.coverMotion&&this.coverMotion.to!==openingTarget&&Math.abs(this.open-openingTarget)<=.0001)this.coverMotion=null
     if(this.coverMotion?.to!==openingTarget&&Math.abs(this.open-openingTarget)>.0001){this.coverMotion={from:this.open,to:openingTarget,elapsed:0};if(openingTarget===180){this.dropElapsed=0;this.openingActive=true}}
     if(this.reduced.matches){this.open=openingTarget;this.coverMotion=null;this.dropElapsed=2000;this.openingActive=false}else if(this.coverMotion){this.coverMotion.elapsed+=dt*1000;const a=coverProgress(this.coverMotion.from,this.coverMotion.to,this.coverMotion.elapsed);this.open=a.angle;if(a.done)this.coverMotion=null}
@@ -211,18 +215,18 @@ export class BookRuntime {
     if(this.collisionEnabled&&display.length){this.openingPeak=Math.max(this.openingPeak,drop.length);const sample=this.book.collisionSample();this.collisionPeak=Math.max(this.collisionPeak,sample.crossings);this.collisionPairs+=sample.pairs;this.host.dataset.collision=JSON.stringify({...sample,peak:this.collisionPeak,openingPeak:this.openingPeak,pairsTotal:this.collisionPairs,frames:++this.collisionSamples})}
     if(this.meshProbeEnabled&&display.length&&now-this.meshProbeAt>=120){this.meshProbeAt=now;const m=this.book.meshCollisionSample();this.meshProbeTotal.frames++;this.meshProbeTotal.segments+=m.segments;this.meshProbeTotal.hits+=m.hits;const phase=drop.length?'opening':this.turn?.span&&this.turn.span>1?'chunk':'leaf';this.meshProbeTotal.byPhase[phase]=(this.meshProbeTotal.byPhase[phase]??0)+m.hits;for(const [name,n] of Object.entries(m.byMesh))this.meshProbeTotal.byMesh[name]=(this.meshProbeTotal.byMesh[name]??0)+n;this.host.dataset.meshCollision=JSON.stringify({...this.meshProbeTotal,last:m})}
     this.perf?.finish()
-    if(this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
+    if(this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
     this.scene.background=new T.Color(c.background);this.readLight=-1;this.applyLight(this.open/180)
     this.book.root.rotation.set(T.MathUtils.degToRad(c.pitch),T.MathUtils.degToRad(c.yaw),0)
-    this.floor.position.y=-c.height/200-.22;if(c.opening<READ_ANGLE)this.orbitReading=false;this.controls.enabled=c.opening>=READ_ANGLE?this.orbitReading:c.interaction!=='hover'
+    this.floor.position.y=-c.height/200-.22;if(c.opening<READ_ANGLE){this.orbitReading=false;this.savedReading=null;this.cancelOrbitTransition()}this.controls.enabled=c.opening>=READ_ANGLE?this.orbitReading:c.interaction!=='hover'
     this.invalidate()
   }
   update(c:BookConfig){
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
     const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
-    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged){this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
+    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged){this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
     if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
     if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c);if(rebuild)this.fit(true)
@@ -233,7 +237,7 @@ export class BookRuntime {
     this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
     this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
     this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
-    this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
+    this.savedReading=null;this.cancelOrbitTransition();this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
     this.invalidate()
   }
   beginPageDrag(direction:1|-1,grip=0,grabU=1,group=1,regrab=false){
@@ -272,9 +276,18 @@ export class BookRuntime {
     this.hovered=true;this.turn.grip=hit.grip;this.turn.grabU=hit.edge;this.invalidate()
   }
   clearPageHover(){this.hoverPoint=null;cancelAnimationFrame(this.hoverFrame);this.hoverFrame=0;if(this.turn?.preview){this.hovered=false;this.invalidate()}}
-  setReadingOrbit(enabled:boolean){this.orbitReading=enabled&&this.config.opening>=READ_ANGLE;this.clearPageHover();this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';this.cameraPan=null;if(this.orbitReading){this.fit();this.readAutoFit=false;}else this.fit();this.invalidate()}
-  fit(preserveDirection=false){const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.controls.minDistance=Math.max(.3,radius*.85);this.controls.maxTargetRadius=radius*1.5;this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.cursor.copy(this.controls.target);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
-  setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;this.readAutoFit=!this.orbitReading;const d=this.camera.position.distanceTo(this.controls.target);const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(this.controls.target).add(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
+  setReadingOrbit(enabled:boolean,reset=false){
+    const was=this.orbitReading,next=enabled&&this.config.opening>=READ_ANGLE,restored=was&&!next&&!reset&&!!this.savedReading;this.cancelOrbitTransition();this.clearPageHover();this.cameraPan=null
+    if(next&&!was){this.savedReading={position:this.camera.position.clone(),target:this.controls.target.clone(),view:{...this.readingTarget},bounds:this.readingBounds?{...this.readingBounds}:null,base:{...this.readBase}};this.orbitReading=true;this.fit(true);this.readAutoFit=false}
+    else if(!next){const saved=was&&!reset?this.savedReading:null;this.orbitReading=false;this.fit();if(saved){this.camera.position.copy(saved.position);this.controls.target.copy(saved.target);this.controls.update();this.readingView={...saved.view};this.readingTarget={...saved.view};if(saved.bounds&&saved.bounds.width===this.host.clientWidth&&saved.bounds.height===this.host.clientHeight){this.readingBounds=saved.bounds;this.readBase=saved.base}}this.savedReading=null}
+    this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';this.invalidate();return restored
+  }
+  fit(preserveDirection=false){this.cancelOrbitTransition();const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.controls.minDistance=Math.max(.3,radius*.85);this.controls.maxTargetRadius=radius*1.5;this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.cursor.copy(this.controls.target);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
+  setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){
+    const animated=this.orbitReading&&!this.reduced.matches;const previous=this.camera.position.clone().sub(this.controls.target);this.fit();const d=this.camera.position.distanceTo(this.controls.target);const dir=view==='perspective'?new T.Vector3(0,.04,1):new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001).applyEuler(this.book.root.rotation);dir.normalize();this.readAutoFit=!this.orbitReading
+    if(animated&&previous.lengthSq()>1e-8){this.camera.position.copy(this.controls.target).add(previous);this.controls.update();this.orbitTransition={from:previous,to:dir.multiplyScalar(d),elapsed:0};this.host.dataset.orbitTransition='active'}else{this.camera.position.copy(this.controls.target).add(dir.multiplyScalar(d));this.controls.update()}
+    this.invalidate()
+  }
   private resetReadingCamera(){
     this.readingView=initialReadingView();this.readingTarget=initialReadingView();this.readingVelocity={zoom:0,x:0,y:0};this.readingBounds=null;this.cameraMoving=false;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
     this.readBase={zoom:1,x:0,y:0};this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix()
@@ -339,7 +352,7 @@ export class BookRuntime {
   }
   private readPanEnd=(e:PointerEvent)=>{
     const p=this.cameraPan;if(!p||p.id!==e.pointerId)return
-    e.stopPropagation();this.cameraPan=null;if(this.readingBounds)this.readingTarget=clampReadingView(this.readingView,this.readingBounds);this.invalidate()
+    e.stopPropagation();this.cameraPan=null;if(this.readingBounds){this.readingTarget=clampReadingView(this.readingView,this.readingBounds);this.cameraMoving=true;this.host.dataset.readCameraMoving='true'}this.invalidate()
   }
   // Touch gestures own the entire sequence. React's mouse drag state is
   // never populated for reading touch pointers.
