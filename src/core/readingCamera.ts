@@ -56,9 +56,11 @@ export function pinchReading(v:ReadingView,ratio:number,origin:{x:number;y:numbe
 
 // Local editor projection adapter: source fit fraction .96, reserve the
 // actual viewport controls instead of the source site's 88/24px chrome.
-export function fitReadingBounds(b:ReadingBounds,padding=12,verticalPadding=48){
- const w=Math.max(1,b.right-b.left),h=Math.max(1,b.bottom-b.top),safeW=Math.max(1,b.width-2*Math.min(padding,b.width*.1)),safeH=Math.max(1,b.height-2*Math.min(verticalPadding,b.height*.15))
+export function fitReadingBounds(b:ReadingBounds,padding=12,verticalPadding=48,chrome?:{top:number;bottom:number}){
+ const w=Math.max(1,b.right-b.left),h=Math.max(1,b.bottom-b.top),safeW=Math.max(1,b.width-2*Math.min(padding,b.width*.1))
+ const top=chrome?Math.min(Math.max(0,chrome.top),b.height*.36):Math.min(verticalPadding,b.height*.15),bottom=chrome?Math.min(Math.max(0,chrome.bottom),b.height*.42):top
+ const safeH=Math.max(1,b.height-top-bottom)
  const zoom=R.fitFraction*Math.min(safeW/w,safeH/h)
- const x=-(b.left+b.right)*zoom/2,y=-(b.top+b.bottom)*zoom/2
+ const x=-(b.left+b.right)*zoom/2,y=-(b.top+b.bottom)*zoom/2+(top-bottom)/2
  return {zoom,x,y,bounds:{...b,left:b.left*zoom+x,right:b.right*zoom+x,top:b.top*zoom+y,bottom:b.bottom*zoom+y,pageWidth:b.pageWidth===undefined?undefined:b.pageWidth*zoom}}
 }

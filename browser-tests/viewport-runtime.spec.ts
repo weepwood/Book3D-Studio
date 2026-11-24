@@ -1,0 +1,18 @@
+import {test,expect} from '@playwright/test'
+
+test('低高度预览自动避让工具栏，缩放与返回编辑不裁切',async({page},info)=>{
+ await page.setViewportSize({width:1440,height:520});await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/')
+ const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible({timeout:15000});await page.getByRole('button',{name:'预览',exact:true}).click();await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000})
+ const check=async()=>{const f=JSON.parse((await host.getAttribute('data-read-frame'))!) as {viewport:[number,number];bounds:{top:number;bottom:number};chrome:{top:number;bottom:number}};const h=f.viewport[1];expect(f.bounds.top+h/2).toBeGreaterThanOrEqual(Math.min(f.chrome.top,h*.36)-.5);expect(f.bounds.bottom+h/2).toBeLessThanOrEqual(h-Math.min(f.chrome.bottom,h*.42)+.5)}
+ await check();await page.screenshot({path:info.outputPath('short-preview.png')});await page.getByRole('button',{name:'返回编辑'}).click();await expect.poll(async()=>JSON.parse((await host.getAttribute('data-read-frame'))!).viewport[0]).toBeLessThan(1440);await check();await page.screenshot({path:info.outputPath('short-editor.png')})
+})
+
+test('WebGL 上下文丢失暂停渲染并恢复当前作品与跨页',async({page},info)=>{
+ await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');const host=page.locator('.canvas-host');const canvas=host.locator('canvas');await expect(canvas).toBeVisible({timeout:15000});await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true');await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host).toHaveAttribute('data-page-index','1');await expect(page.locator('.project')).toContainText('已保存',{timeout:15000})
+ await canvas.evaluate((c:HTMLCanvasElement)=>{const gl=c.getContext('webgl2'),ext=gl?.getExtension('WEBGL_lose_context');if(!ext)throw Error('WEBGL_lose_context unavailable');c.dataset.oldContext='true';ext.loseContext();setTimeout(()=>ext.restoreContext(),1500)})
+ await expect(page.getByRole('alert')).toContainText('图形上下文暂时丢失');await expect(page.getByRole('button',{name:'保存 PNG'})).toBeDisabled();await expect(page.getByRole('alert')).toHaveCount(0,{timeout:20000});await expect(host.locator('canvas')).toHaveCount(1);await expect(host.locator('canvas[data-old-context]')).toHaveCount(0);await expect(host).toHaveAttribute('data-page-index','1');await expect(page.locator('.page-counter')).toHaveText('2–3 / 12');await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host).toHaveAttribute('data-page-index','2');await page.screenshot({path:info.outputPath('context-restored.png')})
+})
+
+test('旋转模式不重复运行昂贵书芯诊断，退出后可以翻页',async({page})=>{
+ await page.goto('/');const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible({timeout:15000});await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000});await expect.poll(async()=>Number(await host.getAttribute('data-group-probe-passes'))).toBeGreaterThan(0);await page.getByRole('button',{name:'旋转视角'}).click();const before=await host.getAttribute('data-group-probe-passes'),b=(await host.boundingBox())!;await page.mouse.move(b.x+b.width*.5,b.y+b.height*.5);await page.mouse.down();await page.mouse.move(b.x+b.width*.7,b.y+b.height*.6,{steps:20});await page.mouse.up();await page.waitForTimeout(500);await expect(host).toHaveAttribute('data-group-probe-passes',before!);await page.getByRole('button',{name:'返回翻页'}).click();await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host).toHaveAttribute('data-page-index','1',{timeout:55000})
+})

@@ -15,7 +15,10 @@ export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dra
    if(!ready&&m.waitMs<CHUNK_TEXTURE_TIMEOUT)return
    m.phase=m.gesture?(dragging?'gather':'release'):'turn';m.visible=true
  }
- if(m.phase==='landed'){m.handoff=false;m.handoffCurl=0;m.landedFrames++;return}
+ if(m.phase==='landed'){
+   if(m.visible&&m.goal!==goal){m.phase='release';m.goal=goal;m.landedFrames=0}
+   else {m.handoff=false;m.handoffCurl=0;m.landedFrames++;return}
+ }
  if(m.phase==='gather'&&!dragging||m.phase==='turn'&&goal===0){m.phase='release';m.goal=goal}
  if(m.phase==='gather'){
    m.lift=approach(m.lift,1,12);m.progress=approach(m.progress,clamp(target),30)
