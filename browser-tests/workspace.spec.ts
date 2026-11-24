@@ -1,3 +1,4 @@
+import {choose} from './select-helper'
 import {test,expect,type Page} from '@playwright/test'
 import {readFile} from 'node:fs/promises'
 const json=(config:Record<string,unknown>)=>({name:'test.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,...config}))})
@@ -40,8 +41,8 @@ test('异步内页导入保留期间删除操作，导出、撤销、重做及�
 test('相同书籍尺寸的项目切换清理活动翻页与相机视角',async({page})=>{
  await ready(page);await input(page).setInputFiles(json({opening:180,pageCount:40,pageDuration:2}));await expect(status(page)).toContainText('项目已导入');await expect(host(page)).toHaveAttribute('data-page-ready','true',{timeout:15000})
  await projectTab(page);await page.getByRole('button',{name:'复制',exact:true}).click();await expect(host(page)).toHaveAttribute('data-page-index','0');await page.getByRole('button',{name:'我的书籍',exact:true}).click()
- await page.getByRole('combobox',{name:'视口方向'}).selectOption('side');await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host(page)).toHaveAttribute('data-page-turn','active');await page.getByRole('button',{name:'我的书籍 副本',exact:true}).click()
- await expect(host(page)).toHaveAttribute('data-page-index','0');await expect(host(page)).toHaveAttribute('data-page-turn','idle');await expect(page.getByRole('combobox',{name:'视口方向'})).toHaveValue('perspective');await expect(host(page)).toHaveAttribute('data-read-zoom','1.0000')
+ await choose(page.getByRole('combobox',{name:'视口方向'}),'side');await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host(page)).toHaveAttribute('data-page-turn','active');await page.getByRole('button',{name:'我的书籍 副本',exact:true}).click()
+ await expect(host(page)).toHaveAttribute('data-page-index','0');await expect(host(page)).toHaveAttribute('data-page-turn','idle');await expect(page.getByRole('combobox',{name:'视口方向'})).toHaveAttribute('data-value','perspective');await expect(host(page)).toHaveAttribute('data-read-zoom','1.0000')
  await page.getByRole('button',{name:'我的书籍',exact:true}).click();await expect(host(page)).toHaveAttribute('data-page-index','1');await expect(host(page)).toHaveAttribute('data-page-turn','idle')
 })
 

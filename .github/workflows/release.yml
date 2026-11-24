@@ -48,7 +48,7 @@ jobs:
             echo 'Release already exists' >&2
             exit 1
           fi
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm test && npm run build
       - name: Build and verify static archive
         env:
