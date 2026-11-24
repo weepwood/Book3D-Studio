@@ -94,7 +94,7 @@ export class BookRuntime {
             const aim=curlTarget('settle',a.progress,a.grabU,this.config.pageCorner)
             a.curlAmount+=(aim-a.curlAmount)*(1-Math.pow(.9,dt*60))
             // Keep the active leaf until its render angle has caught up.
-            if(step.settled&&Math.abs(a.renderProgress-a.progress)<.002){a.renderProgress=a.progress;a.curlAmount=0}
+            if(step.settled&&Math.abs(a.renderProgress-a.progress)<.002&&a.progress===step.progress){a.renderProgress=i?orderedProgress(all[i-1].renderProgress,a.progress):a.progress;if(a.renderProgress===a.progress)a.curlAmount=0}
           }
           if(Math.abs(t.progress-goal)<1e-8&&Math.abs(t.renderProgress-goal)<1e-8){
             if(goal===1)this.index=nextLeaf(this.index,t.direction,leafCount(this.config))
