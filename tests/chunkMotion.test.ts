@@ -18,3 +18,9 @@ it('慢帧首次可见时仍存在交接叶，后续自然衰减而不是跳过�
  stepChunk(m,9,.25,true,true,.08,0);expect(m.visible).toBe(true);expect(m.handoff).toBe(true);expect(m.handoffCurl).toBe(.3);expect(m.handoffFrames).toBe(1)
  stepChunk(m,9,.25,true,true,.4,0);expect(m.handoff).toBe(false);expect(m.handoffCurl).toBe(0)
 })
+
+it('厚块落地交接尚未提交时改变目标，取消旧目标',()=>{
+ const m=newChunkMotion(false);for(let i=0;i<300&&m.phase!=='landed';i++)stepChunk(m,10,1/60,true,false,0,1)
+ expect(m.phase).toBe('landed');expect(m.goal).toBe(1);stepChunk(m,10,1/60,true,false,0,0);expect(m.phase).toBe('release');expect(chunkCanCommit(m,m.progress)).toBe(false)
+ for(let i=0;i<300&&!chunkCanCommit(m,m.progress);i++)stepChunk(m,10,1/60,true,false,0,0);expect(m.goal).toBe(0);expect(m.progress).toBe(0);expect(chunkCanCommit(m,m.progress)).toBe(true)
+})

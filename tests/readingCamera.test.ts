@@ -8,3 +8,10 @@ describe('阅读相机',()=>{
  it('放大保持指针锚点',()=>{const a=initialReadingView(),z=zoomAround(a,2,150,90,b);expect(150*2+z.x).toBeCloseTo(150);expect(90*2+z.y).toBeCloseTo(90)})
  it('弹簧收敛、橡皮筋有限',()=>{const a={zoom:2,x:500,y:200},v={zoom:0,x:0,y:0},target=initialReadingView();let done=false;for(let i=0;i<240&&!done;i++)done=springReading(a,v,target,1/60);expect(done).toBe(true);expect(a).toEqual(target);expect(rubber(1000,-10,10,800)).toBeLessThan(1000)})
 })
+
+it('短视口自动避开不对称工具栏占用的真实安全区',()=>{
+ const raw={width:720,height:360,left:-200,right:200,top:-130,bottom:130},chrome={top:58,bottom:100},f=fitReadingBounds(raw,12,48,chrome)
+ expect(f.bounds.top+raw.height/2).toBeGreaterThanOrEqual(chrome.top)
+ expect(f.bounds.bottom+raw.height/2).toBeLessThanOrEqual(raw.height-chrome.bottom)
+ expect((f.bounds.top+f.bounds.bottom)/2).toBeCloseTo(-21)
+})
