@@ -4,7 +4,7 @@ export type TurnState={direction:1|-1;progress:number;renderProgress:number;velo
 export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {direction,progress:0,renderProgress:0,velocity:0,grip:clamp(grip,-1,1),preview,dragTarget:0}}
 // Angular snap behavior observed in the reference. The editor duration remains an optional time scale.
 export function stepTurn(progress:number,velocity:number,target:number,dt:number,duration:number,queued=false){
-  const frames=clamp(dt,0,R.maxDt)*R.fps*.85/Math.max(.3,duration)
+  const frames=clamp(dt,0,.25)*R.fps*.85/Math.max(.3,duration)
   let angle=progress*Math.PI,speed=velocity*Math.PI/R.fps
   const goal=clamp(target)*Math.PI
   let remaining=frames

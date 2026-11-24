@@ -5,6 +5,7 @@ import { createBook } from './book'
 import { springStep, type BookConfig } from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
+import {curlTarget} from './pageChain'
 export class BookRuntime {
   private renderer:T.WebGLRenderer
   private scene=new T.Scene()
@@ -16,6 +17,9 @@ export class BookRuntime {
   private environment:T.WebGLRenderTarget
   private resize:ResizeObserver
   private frame=0
+  private drawing=false
+  private curlAmount=0
+  private grabU=1
   private last=0
   private open=0
   private velocity=0
@@ -57,12 +61,12 @@ export class BookRuntime {
   private onResize=()=>{const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
   private leave=()=>{this.clearPageHover();this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch),T.MathUtils.degToRad(this.config.yaw),0);this.invalidate()}
-  invalidate=()=>{if(!this.disposed&&!this.frame){this.last=performance.now();this.frame=requestAnimationFrame(this.draw)}}
+  invalidate=()=>{if(!this.disposed&&!this.frame&&!this.drawing){this.last=performance.now();this.frame=requestAnimationFrame(this.draw)}}
   private draw=(now:number)=>{
-    this.frame=0;if(this.disposed)return
+    this.frame=0;if(this.disposed)return;this.drawing=true
     const openingTarget=this.config.opening>=READ_ANGLE?180:this.config.opening
     const [x,v]=springStep(this.open,this.velocity,openingTarget,(now-this.last)/1000)
-    const dt=Math.min(.05,Math.max(0,(now-this.last)/1000))
+    const dt=Math.min(.25,Math.max(0,(now-this.last)/1000))
     this.last=now;this.open=this.reduced.matches?openingTarget:x;this.velocity=this.reduced.matches?0:v
     this.book.setOpening(this.open>=179.5&&openingTarget===180?180:this.open)
     const target=nextLeaf(0,this.config.pageIndex,leafCount(this.config))
@@ -80,13 +84,16 @@ export class BookRuntime {
           if(step.settled){if(goal===1)this.index=nextLeaf(this.index,t.direction,leafCount(this.config));this.turn=null;this.releaseGoal=null}
         }
         t.renderProgress=followRender(t.renderProgress,t.progress,dt)
+        const aim=curlTarget(this.dragging?'drag':'settle',t.progress,this.grabU,this.config.pageCorner)
+        this.curlAmount+=(aim-this.curlAmount)*(1-Math.pow(this.dragging?.96:.9,dt*60))
       }
     }
-    if(this.turn||this.settledIndex!==this.index){this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:this.turn.renderProgress,grip:this.turn.grip,velocity:this.turn.velocity}:null);this.settledIndex=this.turn?-1:this.index}
-    this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(this.open>=179.5)
+    if(!this.turn)this.curlAmount=0
+    if(this.turn||this.settledIndex!==this.index){this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:this.turn.renderProgress,grip:this.turn.grip,velocity:this.turn.velocity,curlAmount:this.curlAmount,grabU:this.grabU}:null);this.settledIndex=this.turn?-1:this.index}
+    this.host.dataset.pageProgress=String(this.turn?.progress??0);this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(this.open>=179.5)
 
     this.book.root.position.set(this.config.width/200*easeTurn(clamp01(this.open/180)),0,0).applyEuler(this.book.root.rotation)
-    this.renderer.render(this.scene,this.camera)
+    this.renderer.render(this.scene,this.camera);this.drawing=false
     if(Math.abs(this.open-openingTarget)>0.0001||Math.abs(this.velocity)>0.0001||this.index!==target||!!this.turn)this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
@@ -102,8 +109,8 @@ export class BookRuntime {
     if(this.index>leafCount(c)||this.turn&&nextLeaf(this.index,this.turn.direction,leafCount(c))===this.index){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.dragging=false;this.releaseGoal=null}
     this.settledIndex=-1;this.apply(c)
   }
-  beginPageDrag(direction:1|-1,grip=0){if(this.config.opening<READ_ANGLE||this.open<179.5||(this.turn&&!this.turn.preview)||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;t.grip=grip;t.velocity=0;this.turn=t;this.dragging=true;this.releaseGoal=null;this.invalidate();return true}
-  dragPage(progress:number,_velocity=0,grip?:number){if(this.dragging&&this.turn){this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;this.invalidate()}}
+  beginPageDrag(direction:1|-1,grip=0,grabU=1){if(this.config.opening<READ_ANGLE||this.open<179.5||(this.turn&&!this.turn.preview)||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;t.grip=grip;t.velocity=0;this.turn=t;this.grabU=grabU;this.dragging=true;this.releaseGoal=null;this.invalidate();return true}
+  dragPage(progress:number,_velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.grabU=grabU;this.invalidate()}}
   endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??releaseCommit(displacementPx);const index=accepted?nextLeaf(this.index,t.direction,leafCount(this.config)):this.index;this.dragging=false;t.velocity=0;this.releaseGoal=accepted?1:0;this.invalidate();return index}
   // Reference hover is a local curl, not a whole-sheet rotation. Keep neutral
   // until the original chain-space curl is ported and visually verified.

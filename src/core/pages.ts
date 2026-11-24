@@ -1,6 +1,7 @@
 import * as T from 'three'
 import type {BookConfig} from './schema'
 import {clamp} from './pagePhysics'
+import {makeChain,rollPoint} from './pageChain'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -26,11 +27,12 @@ export function createCurlGeometry(w:number,h:number){
   const g=new T.PlaneGeometry(w,h,48,18)
   return g
 }
-export function deformPage(g:T.BufferGeometry,w:number,h:number,p:number,curl:number,grip=0,corner=0,velocity=0){
-  const uv=g.getAttribute('uv'),pos=g.getAttribute('position')
-  for(let i=0;i<pos.count;i++){const [x,y,z]=curlPoint(uv.getX(i),uv.getY(i)-.5,p,w,h,curl,grip,corner,velocity);pos.setXYZ(i,x,y,z)}
+export function deformPage(g:T.BufferGeometry,w:number,h:number,p:number,curl:number,grip=0,_corner=0,_velocity=0,amount=0,grabU=1){
+  const chain=makeChain(w,p,curl),uv=g.getAttribute('uv'),pos=g.getAttribute('position')
+  for(let i=0;i<pos.count;i++){const [x,y,z]=rollPoint(chain,uv.getX(i),uv.getY(i)-.5,h,amount,grip,grabU,p);pos.setXYZ(i,x,y,z)}
   pos.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
 }
+
 const passages=[
   ['01','A way of seeing','A book is an invitation to notice the details that usually go unseen. Begin with a question, then make room for an unexpected answer.'],
   ['02','The shape of an idea','An idea becomes tangible through the choices we make: the materials, the scale, the space around it. Design is a practice of paying attention.'],
@@ -84,7 +86,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed)keys.clear()
     config=next
   }
-  function pose(index:number,count:number,active:{direction:1|-1;progress:number;grip?:number;velocity?:number}|null,curl:number){
+  function pose(index:number,count:number,active:{direction:1|-1;progress:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}|null,curl:number){
     const faces=pageFaces(index,count)
     if(active){
       const moving=turnFaces(index,active.direction)
@@ -92,7 +94,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
       assign(left.material,active.direction===-1?next.left:faces.left)
       assign(right.material,active.direction===1?next.right:faces.right)
       assign(front,moving.front);assign(back,moving.back,true)
-      deformPage(geometry,w,h,active.direction===1?active.progress:1-active.progress,curl,active.grip??0,config.pageCorner,active.velocity??0)
+      deformPage(geometry,w,h,active.direction===1?active.progress:1-active.progress,curl,active.grip??0,config.pageCorner,active.velocity??0,active.curlAmount??0,active.grabU??1)
       leaf.visible=true
     }else{assign(left.material,faces.left);assign(right.material,faces.right);leaf.visible=false}
   }

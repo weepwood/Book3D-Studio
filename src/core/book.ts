@@ -86,7 +86,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   rig.mesh.name='Front cover';rig.mesh.castShadow=true;rig.mesh.receiveShadow=true;hinge.add(rig.mesh)
   let last=-1
   let current=c
-  let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurn:{direction:1|-1;progress:number;grip?:number;velocity?:number}|null=null
+  let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurn:{direction:1|-1;progress:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}|null=null
   const refreshPages=()=>{
     const count=leafCount(current),progress=activeTurn?.progress??0
     const layout=stackLayout(readingIndex,count,pageDepth,activeTurn),leftDepth=layout.left,rightDepth=layout.right
@@ -107,7 +107,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
       pages.leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
     }
   }
-  const setReading=(index:number,turn:{direction:1|-1;progress:number;grip?:number;velocity?:number}|null)=>{readingIndex=Math.min(leafCount(current),Math.max(0,index));activeTurn=turn;refreshPages()}
+  const setReading=(index:number,turn:{direction:1|-1;progress:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}|null)=>{readingIndex=Math.min(leafCount(current),Math.max(0,index));activeTurn=turn;refreshPages()}
   const setOpening=(deg:number)=>{
     if(deg===last)return
     last=deg
