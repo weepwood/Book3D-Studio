@@ -60,3 +60,7 @@ PR #7 c1377fa 的真实采集 artifact 14920141980 已人工检查：展开纸�
 
 ## V0.6 双封面与整块扭转
 原版 3fe65... 明确 frontcover1..5 / backcover1..5 的 .8**i 逐节衰减。独立模型改为双 SkinnedMesh，各五骨骼，保持现有前封面总弯曲角，后封面按同一衰减向远离纸芯方向弯曲（总幅度取前封面25%作为编辑器适配），固定 binding lip 蒙皮以保持内外书脊端点，不复制 glTF。原版 04ud... blockPoseTwist 的 .04/.46 进度窗口及 .42rad 最大滞后接入厚块 12 高度分段，按抓取方向选择滞后一侧；自动翻动保持无扭转。移除厚块隐藏单页 GPU/纹理分配和重复 GPU 更新。尚未完整移植原版 handoffLeaf/纹理预热/抬升与落地相位。
+
+## V0.6 厚块生命周期
+源 04ud9... chunk phase gather/turn/release/landed、1200ms texture safety、150ms 自动抬升、.65–1落下、12/14 gather rate、10 release lift rate、.55–.95 release falloff、4 landed frames 已核实。独立状态机在 pageTexture 图片加载完成/失败或超时后才分离厚块，支持双向自动、手动聚拢和取消、落地四帧再提交页码，收拢根部通过真实静止层深度曲面插值。抬升为本地单位下的受限位移近似，不复制原版 shader/liveLift 曲线，原版单独 handoffLeaf 叠层及 GPU 纹理上传预热仍未完整复刻。增加状态机/几何测试及双向真实跳转回归。
+厚块抬升方向使用源 (1−2*smooth(progress)) 连续过零，不在中点符号跳变；厚块渲染直接使用状态机 progress（原版方式），落地四帧计数对应实际到达终点后的帧；准备期间取消保持静止网格，避免瞬间分离。

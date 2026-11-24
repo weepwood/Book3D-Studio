@@ -62,7 +62,8 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
   const own=canvas.cloneNode() as HTMLCanvasElement;own.getContext('2d')!.drawImage(canvas,0,0)
   let reverse:HTMLCanvasElement|null=null
   const redraw=()=>{if(texture.userData.disposed)return;ctx.clearRect(0,0,w,h);ctx.drawImage(own,0,0);if(reverse&&c.pageBleed>0){ctx.save();ctx.globalAlpha=c.pageBleed;ctx.globalCompositeOperation='multiply';ctx.translate(w,0);ctx.scale(-1,1);ctx.drawImage(reverse,0,0);ctx.restore()}texture.needsUpdate=true;invalidate()}
-  const load=(url:string,done:(im:HTMLImageElement)=>void)=>{const im=new Image();im.onload=()=>{if(!texture.userData.disposed)done(im)};im.src=url}
+  texture.userData.pending=0
+  const load=(url:string,done:(im:HTMLImageElement)=>void)=>{const im=new Image();texture.userData.pending++;const finish=()=>{texture.userData.pending--;if(!texture.userData.disposed)invalidate()};im.onload=()=>{try{if(!texture.userData.disposed)done(im)}finally{finish()}};im.onerror=finish;im.src=url}
   const paint=(target:HTMLCanvasElement,im:HTMLImageElement,bg:string)=>{const g=target.getContext('2d')!;g.fillStyle=bg;g.fillRect(0,0,w,h);const q=Math.min(w/im.width,h/im.height);g.drawImage(im,(w-im.width*q)/2,(h-im.height*q)/2,im.width*q,im.height*q)}
   if(c.pageImages[index])load(c.pageImages[index],im=>{paint(own,im,c.paperColor);redraw()})
   const opposite=index%2===0?index+1:index-1
@@ -102,17 +103,18 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor)keys.clear()
     config=next;chunkEdge.color.set(next.paperColor)
   }
+  function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].every(m=>!m.map?.userData.pending)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)
     assign(right.material,direction===1?next.right:faces.right)
     const block=(active[0]?.span??1)>1;chunk.visible=block
-    if(block){const n=active[0].span!,lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1)}
+    if(block)prepareChunk(index,direction,active[0].span!)
     if(!block)active.forEach((_a,i)=>{
       const s=slot(i),moving=turnFaces(index+direction*i,direction)
       assign(s.front,moving.front);assign(s.back,moving.back,true);s.leaf.visible=true
     })
     for(let i=block?0:active.length;i<slots.length;i++)slots[i].leaf.visible=false
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
 }
