@@ -80,6 +80,13 @@ export function skinnedBoard(w:number,h:number,t:number,radius:number,materials:
 // angular budget so their fore-edge cannot drift far away from the cover.
 export function coupledPageAngle(hinge:number,lagged:number,width:number,depth:number){
  const ratio=Math.max(0,depth)/Math.max(.001,width),blend=T.MathUtils.smoothstep(ratio,.08,.42)
- const limit=T.MathUtils.degToRad(T.MathUtils.lerp(36,8,blend))
+ const limit=T.MathUtils.degToRad(T.MathUtils.lerp(36,2,blend))
  return hinge+T.MathUtils.clamp(lagged-hinge,-limit,limit)
+}
+
+// A thick paper block cannot follow the same free board bending as an
+// unsupported cover. Limit deformation continuously by attached depth.
+export function supportedCoverFlex(total:number,width:number,attachedDepth:number){
+ const ratio=Math.max(0,attachedDepth)/Math.max(.001,width),support=T.MathUtils.smoothstep(ratio,.02,.28)
+ return total*(1-.88*support)
 }

@@ -15,4 +15,4 @@ it('薄厚书、全部开合角度与不同书芯分配的保守截面不相交'
  }
 })
 
- it('厚书缩小封面与书芯夹角，薄书保留原有联动',()=>{const hinge=-Math.PI/2,lagged=hinge+.5;expect(coupledPageAngle(hinge,lagged,1,.03)).toBe(lagged);expect(coupledPageAngle(hinge,lagged,1,.8)-hinge).toBeCloseTo(8*Math.PI/180);expect(coupledPageAngle(-Math.PI,-Math.PI,1,.8)).toBe(-Math.PI)})
+ it('厚书缩小封面与书芯夹角，薄书保留原有联动',()=>{const hinge=-Math.PI/2,lagged=hinge+.5;expect(coupledPageAngle(hinge,lagged,1,.03)).toBe(lagged);expect(coupledPageAngle(hinge,lagged,1,.8)-hinge).toBeCloseTo(2*Math.PI/180);expect(coupledPageAngle(-Math.PI,-Math.PI,1,.8)).toBe(-Math.PI)})

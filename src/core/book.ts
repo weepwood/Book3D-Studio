@@ -1,6 +1,6 @@
 import * as T from 'three'
 import type { BookConfig } from './schema'
-import { bookDimensions, openingPose, coupledPageAngle, skinnedBoard, coverBoneAngles, BONE_COUNT } from './geometry'
+import { bookDimensions, openingPose, coupledPageAngle, supportedCoverFlex, skinnedBoard, coverBoneAngles, BONE_COUNT } from './geometry'
 import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
 import {anchorBetween} from './pagePhysics'
 import {batchLayout,leafDepths,gravityDrop,activeSpan,chunkDepths,type ActiveLeaf} from './pageWindow'
@@ -161,7 +161,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     // The lining is an interior component, not a second exterior spine.
     // At small openings it is enclosed by the covers and paper block.
     innerBinding.visible=deg>=35
-    const frontAngles=coverBoneAngles(pose.bone*(BONE_COUNT-1)),rearAngles=coverBoneAngles(-pose.bone*(BONE_COUNT-1)*.25)
+    const frontAngles=coverBoneAngles(supportedCoverFlex(pose.bone*(BONE_COUNT-1),pageWidth,leftDepth)),rearAngles=coverBoneAngles(supportedCoverFlex(-pose.bone*(BONE_COUNT-1)*.25,pageWidth,pageDepth-leftDepth))
     rig.bones.forEach((bone,i)=>{bone.rotation.y=frontAngles[i]});rearRig.bones.forEach((bone,i)=>{bone.rotation.y=rearAngles[i]})
     refreshPages();root.updateMatrixWorld(true);for(const cover of [rig.mesh,back]){cover.computeBoundingSphere();cover.computeBoundingBox()}
   }
