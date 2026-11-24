@@ -4,7 +4,7 @@ import { bookDimensions, openingPose, coupledPageAngle, supportedCoverFlex, skin
 import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
 import {anchorBetween} from './pagePhysics'
 import {batchLayout,leafDepths,gravityDrop,activeSpan,chunkDepths,type ActiveLeaf} from './pageWindow'
-import {createStackGeometry,bindingCompression,bindingHeight,boundLayer,turningChain,poseSurface,edgeTriangleCenters,chunkRowProgress,liftChunkChain,chunkEndpointWeight,stackSection,pickedDepth} from './stackGeometry'
+import {createStackGeometry,bindingCompression,bindingHeight,boundLayer,turningChain,poseSurface,edgeTriangleCenters,chunkRowProgress,liftChunkChain,chunkEndpointWeight,stackSection,pickedDepth,stackHeightSampler} from './stackGeometry'
 import {groupCount} from './referenceScene'
 import {sampleChain,type Chain} from './pageChain'
 import {createBindingGeometry} from './bindingGeometry'
@@ -116,6 +116,9 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     }
     pages.right.position.z=base+bindingHeight(rightDepth,rightCompression)+.002
     pages.left.position.z=-t/2-bindingHeight(leftDepth,leftCompression)-.002
+    // Fully open: both stationary stacks are height fields in root coordinates.
+    const rightHeight=block&&last===180&&rightDepth>.0001?stackHeightSampler(rightLayers[rightLayers.length-1],-w/2+gutterInset,base+bindingHeight(rightDepth,rightCompression),1):null
+    const leftHeight=block&&last===180&&leftDepth>.0001?stackHeightSampler(leftLayers[leftLayers.length-1],pagePivot.position.x-gutterInset,pagePivot.position.z+t/2+bindingHeight(leftDepth,leftCompression),-1):null
     const active=activeTurns.slice(0,layout.active)
     pages.pose(readingIndex,count,active)
     active.forEach((turn,i)=>{
@@ -138,7 +141,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
           const at=anchorBetween(layerFrom,layerTo,turnP)
           return {chain:liftChunkChain(turningChain(pageWidth,turnP,current.pageCurl,cachedLayer(dr,rightCompression),cachedLayer(dl,leftCompression,-1),readingIndex/count),lift,turnP),x:at.x-anchor.x,z:at.z-anchor.z}
         }):undefined
-        pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+.001-anchor.z:-Infinity);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
+        pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+.001-anchor.z:-Infinity,last===180?x=>Math.max(rightHeight?.(x+anchor.x)??-Infinity,leftHeight?.(x+anchor.x)??-Infinity)+.001-anchor.z:undefined);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
       }
       else {const slot=pages.slots[i],leaf=slot.leaf;// Fully open boards are coplanar, and the active leaf basis has no Y rotation.
         // Keep the deformed surface above their inner face; shader and CPU picker share this floor.
@@ -203,15 +206,15 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   // Optional diagnostic: intersect selected deformed page segments with the
   // actual cover/stack meshes using Three's world-space raycaster. Sample
   // both directions to include back-face hits. Not a complete triangle test.
-  function meshCollisionSample(){
+  function meshCollisionSample(dense=false){
     root.updateMatrixWorld(true);rig.skeleton.update();rearRig.skeleton.update()
-    const obstacles=[back,rig.mesh,lower,upper].filter(m=>m.visible),ray=new T.Raycaster(),epsilon=.0008
-    let segments=0,hits=0;const byMesh:Record<string,number>={}
-    const scan=(a:T.Vector3,b:T.Vector3)=>{const dir=b.clone().sub(a),length=dir.length();if(length<=2*epsilon)return;segments++;dir.divideScalar(length);ray.near=epsilon;ray.far=length-epsilon;const found=new Set<string>();for(const [point,sign] of [[a,1],[b,-1]] as const){ray.set(point,dir.clone().multiplyScalar(sign));for(const hit of ray.intersectObjects(obstacles,false))found.add(hit.object.name)}for(const name of found){hits++;byMesh[name]=(byMesh[name]??0)+1}}
+    const obstacles=[back,rig.mesh,lower,upper,...(dense?[spine,innerBinding]:[])].filter(m=>m.visible),ray=new T.Raycaster(),epsilon=.0008
+    let segments=0,hits=0;const byMesh:Record<string,number>={},examples:{source:string;target:string;progress:number;direction:number;point:number[]}[]=[];let source='leaf',progress=0,direction=1
+    const scan=(a:T.Vector3,b:T.Vector3)=>{const dir=b.clone().sub(a),length=dir.length();if(length<=2*epsilon)return;segments++;dir.divideScalar(length);ray.near=epsilon;ray.far=length-epsilon;const found=new Set<string>();for(const [point,sign] of [[a,1],[b,-1]] as const){ray.set(point,dir.clone().multiplyScalar(sign));for(const hit of ray.intersectObjects(obstacles,false)){found.add(hit.object.name);if(dense&&examples.length<12)examples.push({source,target:hit.object.name,progress,direction,point:root.worldToLocal(hit.point.clone()).toArray()})}}for(const name of found){hits++;byMesh[name]=(byMesh[name]??0)+1}}
     for(const [i,turn] of activeTurns.entries()){
-      if((turn.span??1)>1){const m=pages.chunk;if(!m.visible)continue;const pos=m.geometry.getAttribute('position'),idx=m.geometry.index;if(!idx)continue;for(const g of m.geometry.groups){if(g.materialIndex!==4&&g.materialIndex!==5)continue;for(let k=g.start;k+2<g.start+g.count;k+=48){const a=m.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k))),b=m.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k+1)));scan(a,b)}}
-      }else{const slot=pages.slots[i];if(!slot?.leaf.visible)continue;for(const v of [-.4,0,.4]){let a=slot.leaf.localToWorld(slot.gpu.pickPoint(.0625,v));for(let j=2;j<=16;j++){const b=slot.leaf.localToWorld(slot.gpu.pickPoint(j/16,v));scan(a,b);a=b}}}
-    }return {segments,hits,byMesh}
+      progress=turn.progress;direction=turn.direction;source='leaf';if((turn.span??1)>1){const m=pages.chunk;if(!m.visible)continue;for(const mesh of [m,...(dense?m.children.filter((c):c is T.Mesh=>c instanceof T.Mesh&&c.visible):[])]){source=mesh===m?'chunk':'handoff';const g=mesh.geometry,pos=g.getAttribute('position'),idx=g.index;if(!idx)continue;const groups=g.groups.length?g.groups:[{start:0,count:idx.count,materialIndex:4}];for(const group of groups){if(!dense&&group.materialIndex!==4&&group.materialIndex!==5)continue;for(let k=group.start;k+2<group.start+group.count;k+=dense?24:48){const a=mesh.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k))),b=mesh.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k+1)));scan(a,b);if(dense){const c=mesh.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k+2)));scan(b,c);scan(c,a)}}}}
+      }else{const slot=pages.slots[i];if(!slot?.leaf.visible)continue;const rows=dense?9:3,cols=dense?32:16;let previous:T.Vector3[]=[];for(let r=0;r<rows;r++){const v=-.4+.8*r/(rows-1),row:T.Vector3[]=[];for(let j=1;j<=cols;j++){const b=slot.leaf.localToWorld(slot.gpu.pickPoint(j/cols,v));if(row.length)scan(row[row.length-1],b);if(dense&&previous.length){scan(previous[j-1],b);if(j>1)scan(previous[j-2],b)}row.push(b)}previous=row}}
+    }return {segments,hits,byMesh,examples}
   }
   function collisionSample(){
     // Three fixed height slices, 33 samples along each live leaf. The CPU

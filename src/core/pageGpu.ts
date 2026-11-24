@@ -25,14 +25,14 @@ vec4 ppSample(float u){
   vec2 d=(6.0*t2-6.0*t)*a+(3.0*t2-4.0*t+1.0)*ta+(-6.0*t2+6.0*t)*b+(3.0*t2-2.0*t)*tb;
   return vec4(x,length(d)>1e-7?normalize(d):vec2(1.0,0.0));
 }
-vec3 ppClearance(vec3 p){p.z=max(p.z,ppFloor);return p;}
+vec3 ppClearance(vec3 p,inout vec3 n){if(p.z<ppFloor){p.z=ppFloor;n=vec3(0.0,0.0,n.z<0.0?-1.0:1.0);}return p;}
 vec3 ppShape(vec3 p,out vec3 n){
   float x=p.x+ppWidth*.5,y=p.y,u=clamp(x/ppWidth,0.0,1.0);
   vec4 s=ppSample(u); n=vec3(-s.w,0.0,s.z);
   vec3 base=vec3(s.x,y,s.y);
   vec2 d=vec2(cos(ppTilt),sin(ppTilt));
   float xi=dot(vec2(x-.74*ppWidth,y),d);
-  if(ppAmount<1e-6||xi<=0.0||u<=0.0)return ppClearance(base);
+  if(ppAmount<1e-6||xi<=0.0||u<=0.0)return ppClearance(base,n);
   float steps=max(1.0,ceil(xi/(ppSpan/64.0))),ds=xi/steps;
   vec2 roll=vec2(0.0);
   for(int i=0;i<128;i++){
@@ -45,7 +45,7 @@ vec3 ppShape(vec3 p,out vec3 n){
   vec3 t=vec3(land.z,0.0,land.w),outward=vec3(-land.w,0.0,land.z)*ppLift;
   float av=min(3.14159265,ppAmount*pow(clamp(xi/ppSpan,0.0,1.0),.86));
   n=normalize(cos(av)*outward-sin(av)*(d.x*t+vec3(0.0,d.y,0.0)))*ppLift;
-  return ppClearance(vec3(land.x,y+shift*d.y,land.y)+t*(landX-landU*ppWidth)+outward*max(0.0,roll.y));
+  return ppClearance(vec3(land.x,y+shift*d.y,land.y)+t*(landX-landU*ppWidth)+outward*max(0.0,roll.y),n);
 }
 `
 export function createGpuPage(width:number,height:number){
@@ -55,7 +55,7 @@ export function createGpuPage(width:number,height:number){
   const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1},ppFloor:{value:-1e6}}
   function attach(material:T.Material){
     const prior=material.onBeforeCompile.bind(material),priorKey=material.customProgramCacheKey()
-    material.customProgramCacheKey=()=> 'book3d-chain-roll-v1:'+priorKey
+    material.customProgramCacheKey=()=> 'book3d-chain-roll-v2:'+priorKey
     material.onBeforeCompile=(shader,renderer)=>{
       prior(shader,renderer)
       Object.assign(shader.uniforms,uniforms)

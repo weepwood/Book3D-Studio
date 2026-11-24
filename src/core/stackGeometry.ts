@@ -82,15 +82,24 @@ export function liftChunkChain(chain:Chain,lift:number,progress:number):Chain{
  for(let i=0;i<n;i++){const a=Math.max(0,i-1)*2,b=Math.min(n-1,i+1)*2,x=positions[b]-positions[a],z=positions[b+1]-positions[a+1],d=Math.hypot(x,z)||1;tangents[i*2]=x/d;tangents[i*2+1]=z/d}
  return {width:chain.width,positions,tangents}
 }
+// Height of the actual tessellated static block face in the open cover basis.
+// Interpolation follows the 48-column mesh, including the shortened curved edge.
+export function stackHeightSampler(chain:Chain,anchorX:number,anchorZ:number,sign:1|-1){
+ const points=Array.from({length:49},(_,i)=>{const p=sampleChain(chain,i/48);return {x:anchorX+sign*p.x,z:anchorZ+p.z}});if(sign===-1)points.reverse()
+ return (x:number)=>{if(x<points[0].x-.001||x>points[48].x+.001)return -Infinity;let lo=0,hi=48;while(hi-lo>1){const mid=(lo+hi)>>1;if(points[mid].x<x)lo=mid;else hi=mid}const a=points[lo],b=points[hi];return T.MathUtils.lerp(a.z,b.z,clamp((x-a.x)/Math.max(1e-8,b.x-a.x)))}
+}
 export type ChunkLayer={chain:Chain;x:number;z:number}
 export function createChunkGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),baseUV=Float32Array.from(uv.array),normal=g.getAttribute('normal')
  const faceIndices=[4,5].map(face=>{const group=g.groups.find(x=>x.materialIndex===face)!;return Array.from(g.index!.array.slice(group.start,group.start+group.count))})
  const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
  const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity){
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
    for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,Math.max(floor,z))}
+   // Translate complete material cross-sections rather than clipping only
+   // the bottom vertices. Preserve local thickness while clearing the stack.
+   if(clearance){const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),key=(i:number)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48);for(let i=0;i<p.count;i++){const k=key(i);lifts[k]=Math.max(lifts[k],clearance(p.getX(i))-p.getZ(i))}for(let i=0;i<p.count;i++){const lift=lifts[key(i)];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
    const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
    if(overlay){
@@ -102,7 +111,7 @@ export function createChunkGeometry(w:number,h:number){
      for(const i of new Set(faceIndices[side-4])){
        const y=original[i*3+1],u=original[i*3]/w+.5,row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),c=rows?.[row]??chain,a=sampleChain(c,u)
        const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress)
-       hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],Math.max(floor,p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003))
+       hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],Math.max(floor,clearance?.(p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003)??-Infinity,p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003))
      }
      hp.needsUpdate=true;handoff.computeVertexNormals();handoff.computeBoundingSphere();handoff.computeBoundingBox()
    }
