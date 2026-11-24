@@ -18,7 +18,7 @@ export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dra
  if(m.phase==='landed'){m.handoff=false;m.handoffCurl=0;m.landedFrames++;return}
  if(m.phase==='gather'&&!dragging||m.phase==='turn'&&goal===0){m.phase='release';m.goal=goal}
  if(m.phase==='gather'){
-   m.lift=approach(m.lift,1,12);m.progress=approach(m.progress,clamp(target),14)
+   m.lift=approach(m.lift,1,12);m.progress=approach(m.progress,clamp(target),30)
  }else if(m.phase==='turn'){
    m.elapsedMs+=dt*1000;m.progress=chunkAutoProgress(m.elapsedMs,count);m.lift=smooth(0,150,m.elapsedMs)*(1-smooth(.65,1,m.progress))
    if(m.progress===1){m.lift=0;m.goal=1;m.phase='landed'}

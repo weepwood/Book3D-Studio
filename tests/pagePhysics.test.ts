@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {newTurn,stepTurn,releaseCommit,followDrag,followRender,stackLayout,anchorBetween} from '../src/core/pagePhysics'
+import {newTurn,stepTurn,releaseCommit,followDrag,followRender,stackLayout,anchorBetween,projectedDrag,stepManualRelease} from '../src/core/pagePhysics'
 import {curlPoint} from '../src/core/pages'
 import {parseConfig} from '../src/core/schema'
 describe('翻页动力学',()=>{
@@ -16,3 +16,5 @@ it('最慢翻页设置下双向释放及时收敛，不依赖高帧率',()=>{
   expect(done,`goal=${goal}, dt=${dt}, initial=${initial}, progress=${p}`).toBe(true);expect(p).toBe(goal);expect(v).toBe(0)
  }
 })
+
+it('屏幕投影拖动适应视角，手动释放在有限时间内双向完成',()=>{expect(projectedDrag(-150,0,-1,0,300)).toEqual({distance:150,progress:.5});expect(projectedDrag(0,-150,0,-1,300)).toEqual({distance:150,progress:.5});expect(projectedDrag(50,0,-1,0,100).progress).toBe(-.5);for(const goal of [0,1] as const)for(const duration of [.3,.85,2]){let p=.5;for(let i=0;i<120;i++)p=stepManualRelease(p,goal,1/60,duration).progress;expect(p).toBe(goal)}})
