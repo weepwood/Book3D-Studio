@@ -96,3 +96,22 @@ test('超六张整块书芯跳转',async({page},testInfo)=>{
  if(Number(await host.getAttribute('data-chunk-leaves'))===12)await page.screenshot({path:testInfo.outputPath('large-chunk.png')})
  await expect(host).toHaveAttribute('data-page-index','12',{timeout:55000})
 })
+
+
+test('阅读缩放、受限平移及复位后翻页',async({page},testInfo)=>{
+ await page.goto('/')
+ const host=page.locator('.canvas-host')
+ await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000})
+ const box=(await host.boundingBox())!;await page.mouse.move(box.x+box.width*.6,box.y+box.height*.5)
+ await page.mouse.wheel(0,-600)
+ await expect.poll(async()=>Number(await host.getAttribute('data-read-zoom')),{timeout:20000}).toBeGreaterThan(1.5)
+ await expect(host).toHaveAttribute('data-read-camera-moving','false',{timeout:20000})
+ await page.mouse.down({button:'middle'});await page.mouse.move(box.x+box.width*.8,box.y+box.height*.55,{steps:4});await page.mouse.up({button:'middle'})
+ await expect(host).toHaveAttribute('data-read-camera-moving','false',{timeout:20000})
+ await page.screenshot({path:testInfo.outputPath('reading-zoom-pan.png')})
+ await page.getByRole('button',{name:'重置视角'}).click()
+ await expect(host).toHaveAttribute('data-read-zoom','1.0000')
+ await expect(host).toHaveAttribute('data-read-pan','[0,0]')
+ await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host).toHaveAttribute('data-page-index','1',{timeout:55000})
+})
