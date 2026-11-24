@@ -53,3 +53,12 @@ export function pinchReading(v:ReadingView,ratio:number,origin:{x:number;y:numbe
  const p=panLimits(b,zoom)
  return {zoom,x:rubber(center.x-(origin.x-v.x)*scale,p.minX,p.maxX,b.width,R.panRubber),y:rubber(center.y-(origin.y-v.y)*scale,p.minY,p.maxY,b.height,R.panRubber)}
 }
+
+// Local editor projection adapter: source fit fraction .96, reserve the
+// actual viewport controls instead of the source site's 88/24px chrome.
+export function fitReadingBounds(b:ReadingBounds,padding=12,verticalPadding=48){
+ const w=Math.max(1,b.right-b.left),h=Math.max(1,b.bottom-b.top),safeW=Math.max(1,b.width-2*Math.min(padding,b.width*.1)),safeH=Math.max(1,b.height-2*Math.min(verticalPadding,b.height*.15))
+ const zoom=R.fitFraction*Math.min(safeW/w,safeH/h)
+ const x=-(b.left+b.right)*zoom/2,y=-(b.top+b.bottom)*zoom/2
+ return {zoom,x,y,bounds:{...b,left:b.left*zoom+x,right:b.right*zoom+x,top:b.top*zoom+y,bottom:b.bottom*zoom+y,pageWidth:b.pageWidth===undefined?undefined:b.pageWidth*zoom}}
+}

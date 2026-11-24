@@ -1,6 +1,6 @@
 import * as T from 'three'
 import {stackBend,stackSweep,offsetStackProfile,PRESS_STACK_PROFILE} from './stackProfile'
-import {sampleChain,type Chain,makeChain} from './pageChain'
+import {sampleChain,type Chain} from './pageChain'
 import {clamp} from './pagePhysics'
 // The reference's page model is much larger. Fit its angular profile to our
 // independent cover clearance before sampling; this is explicitly an adapter.
@@ -18,20 +18,33 @@ export function surfaceChain(width:number,angle:number,offset=0):Chain{
  for(let i=0;i<n;i++){const lo=Math.max(0,i-1),hi=Math.min(n-1,i+1),dx=positions[hi*2]-positions[lo*2],dz=positions[hi*2+1]-positions[lo*2+1],d=Math.hypot(dx,dz)||1;tangents[i*2]=dx/d;tangents[i*2+1]=dz/d}
  return {positions,tangents,width}
 }
-export function turningChain(width:number,p:number,flex:number,right:Chain,left:Chain):Chain{
- const t=clamp(p),base=makeChain(width,t,flex),edge=Math.min(t,1-t)*2,m=edge*edge*(3-2*edge),s=t*t*(3-2*t)
- // Endpoint continuity is exact. Between endpoints the reference-inspired
- // moving chain is blended with the two settled profiles.
- const angle=t*Math.PI,ca=Math.cos(angle),sa=Math.sin(angle)
- for(let i=0;i<33;i++){const j=i*2,x=right.positions[j]*(1-s)+left.positions[j]*s,z=right.positions[j+1]*(1-s)+left.positions[j+1]*s;const dx=right.tangents[j]*(1-s)+left.tangents[j]*s,dz=right.tangents[j+1]*(1-s)+left.tangents[j+1]*s
- // left is supplied in its cover-local, positive-X basis; rotate with the leaf.
- base.positions[j]=base.positions[j]*m+(x*ca-z*sa)*(1-m);base.positions[j+1]=base.positions[j+1]*m+(x*sa+z*ca)*(1-m)
- const tx=base.tangents[j]*m+(dx*ca-dz*sa)*(1-m),tz=base.tangents[j+1]*m+(dx*sa+dz*ca)*(1-m),d=Math.hypot(tx,tz)||1;base.tangents[j]=tx/d;base.tangents[j+1]=tz/d}
- return base
+// Source 67291 integrates tangent angle, not interpolated Cartesian points.
+// Endpoint profiles are exact; intermediate sheets conserve arc length.
+export function turningChain(width:number,p:number,flex:number,right:Chain,left:Chain,split=.5):Chain{
+ const t=clamp(p),n=33
+ if(t===0)return right
+ if(t===1)return {width,positions:Float64Array.from(left.positions,v=>-v),tangents:Float64Array.from(left.tangents,v=>-v)}
+ const smooth=(v:number)=>{v=clamp(v);return v*v*(3-2*v)},edge=smooth(Math.min(t,1-t)*2),mix=smooth(t)
+ const angle=t*Math.PI,live=(smooth((t-.03)/.87)-clamp(split))*clamp(flex)
+ const sweep=stackSweep(.9),flop=-Math.tanh(8*live)*PRESS_STACK_PROFILE.curlFlop*Math.max(0,(Math.sin(angle)-.6)/.4)*clamp(flex)
+ const nodeAngles=(chain:Chain)=>Array.from({length:n},(_,i)=>Math.atan2(chain.tangents[2*i+1],chain.tangents[2*i]))
+ const ra=nodeAngles(right),la=nodeAngles(left)
+ const at=(a:number[],u:number)=>{const k=clamp(u)*(n-1),i=Math.min(n-2,Math.floor(k)),q=k-i;return a[i]*(1-q)+a[i+1]*q}
+ const theta=(u:number)=>angle+(1-edge)*(at(ra,u)*(1-mix)+at(la,u)*mix)+edge*(live*sweep*stackBend(u,PRESS_STACK_PROFILE.pageCurlFrontPower)+flop*u*u)
+ const positions=offsetStackProfile(width,theta,0,n),tangents=new Float64Array(n*2)
+ for(let i=0;i<n;i++){const a=theta(i/(n-1));tangents[i*2]=Math.cos(a);tangents[i*2+1]=Math.sin(a)}
+ return {width,positions,tangents}
+}
+// Physical reference leaf pitch .0234 in page width 15.6; two alternating
+// bands per repeated tile. Density stays stable when the split changes.
+export function paperEdgeRepeat(width:number,depth:number){return Math.max(0,depth)/(2*.0234/15.6*Math.max(width,1e-8))}
+export function stackSection(layers:Chain[],depth:number,compression:number,u:number){
+ const bottom=sampleChain(layers[0],u).z,top=depth*(1-clamp(compression))+sampleChain(layers[2],u).z
+ return {bottom,top,thickness:top-bottom}
 }
 export function createStackGeometry(w:number,h:number){
- const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
- return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],level=Math.round((z+.5)*2),s=sampleChain(layers[sign===1?level:2-level],x/w+.5);p.setXYZ(i,s.x-w/2,y,z*depth+sign*(s.z-depth*clamp(compression)*(sign===1?level:2-level)/2))}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+ const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),originalUV=Float32Array.from(uv.array),normal=g.getAttribute('normal'),edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
+ return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],level=Math.round((z+.5)*2),s=sampleChain(layers[sign===1?level:2-level],x/w+.5);p.setXYZ(i,s.x-w/2,y,z*depth+sign*(s.z-depth*clamp(compression)*(sign===1?level:2-level)/2))}const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
 }
 export function poseSurface(g:T.BufferGeometry,chain:Chain,flip:boolean){
  const uv=g.getAttribute('uv'),p=g.getAttribute('position')

@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
 import {createTextureWarmer} from './textureWarm'
 import { bookDimensions } from './geometry'
-import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,type ReadingView,type ReadingBounds} from './readingCamera'
+import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,fitReadingBounds,type ReadingView,type ReadingBounds} from './readingCamera'
 import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newChunkMotion,stepChunk,chunkCanCommit} from './chunkMotion'
@@ -37,6 +37,8 @@ export class BookRuntime {
   private readingTarget=initialReadingView()
   private readingVelocity:ReadingView={zoom:0,x:0,y:0}
   private readingBounds:ReadingBounds|null=null
+  private readBase={zoom:1,x:0,y:0}
+  private readAutoFit=true
   private cameraMoving=false
   private touchPoints=new Map<number,{x:number;y:number}>()
   private touchMode:'idle'|'pending'|'page'|'pan'|'pinch'|'hold'='idle'
@@ -217,30 +219,43 @@ export class BookRuntime {
     this.hovered=true;this.turn.grip=hit.grip;this.turn.grabU=hit.edge;this.invalidate()
   }
   clearPageHover(){if(this.turn?.preview){this.hovered=false;this.invalidate()}}
-  fit(){this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.04,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
-  setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
+  fit(){this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.04,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
+  setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;this.readAutoFit=false;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
   private resetReadingCamera(){
     this.readingView=initialReadingView();this.readingTarget=initialReadingView();this.readingVelocity={zoom:0,x:0,y:0};this.readingBounds=null;this.cameraMoving=false;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
-    this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix()
+    this.readBase={zoom:1,x:0,y:0};this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix()
   }
   private updateReadingCamera(dt:number,ready:boolean){
-    if(!ready){if(this.config.opening<READ_ANGLE&&(this.readingView.zoom!==1||this.readingView.x||this.readingView.y))this.resetReadingCamera();return}
+    if(!ready){if(this.config.opening<READ_ANGLE&&(this.readBase.zoom!==1||this.readBase.x||this.readBase.y||this.readingView.zoom!==1||this.readingView.x||this.readingView.y))this.resetReadingCamera();return}
     const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return
     if(!this.readingBounds){
       this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.camera.updateMatrixWorld(true);this.book.root.updateMatrixWorld(true)
       let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity,pageWidth=0
-      // Use both visible page meshes, not the moving GPU geometry, for
-      // the stable reading bounds. Recompute on resize and model/view changes.
-      for(const m of this.book.readingSurfaces){m.geometry.computeBoundingBox();const b=m.geometry.boundingBox!;let lo=Infinity,hi=-Infinity;for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]){const p=m.localToWorld(new T.Vector3(x,y,z)).project(this.camera);lo=Math.min(lo,p.x*w/2);hi=Math.max(hi,p.x*w/2);top=Math.min(top,-p.y*h/2);bottom=Math.max(bottom,-p.y*h/2)}left=Math.min(left,lo);right=Math.max(right,hi);pageWidth=Math.max(pageWidth,hi-lo)}
-      if(!Number.isFinite(left))return
-      this.readingBounds={width:w,height:h,left,right,top,bottom,pageWidth};this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
+      // Fit stable covers and blocks as well as paper. Ignore active meshes
+      // so a turning page cannot pump the camera.
+      for(const m of this.book.readingFrameMeshes){
+        if(!m.visible)continue
+        const box=m instanceof T.SkinnedMesh?(m.boundingBox??(m.computeBoundingBox(),m.boundingBox!)):(m.geometry.boundingBox??(m.geometry.computeBoundingBox(),m.geometry.boundingBox!))
+        let lo=Infinity,hi=-Infinity
+        for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){
+          const p=m.localToWorld(new T.Vector3(x,y,z)).project(this.camera);lo=Math.min(lo,p.x*w/2);hi=Math.max(hi,p.x*w/2);top=Math.min(top,-p.y*h/2);bottom=Math.max(bottom,-p.y*h/2)
+        }
+        left=Math.min(left,lo);right=Math.max(right,hi)
+        if(m===this.book.readingSurfaces[0]||m===this.book.readingSurfaces[1])pageWidth=Math.max(pageWidth,hi-lo)
+      }
+      if(!Number.isFinite(left)||!Number.isFinite(top))return
+      const raw={width:w,height:h,left,right,top,bottom,pageWidth}
+      const frame=this.readAutoFit?fitReadingBounds(raw):{zoom:1,x:0,y:0,bounds:raw}
+      this.readBase={zoom:frame.zoom,x:frame.x,y:frame.y};this.readingBounds=frame.bounds;this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
+      this.host.dataset.readFrame=JSON.stringify({zoom:frame.zoom,widthRatio:(frame.bounds.right-frame.bounds.left)/w,heightRatio:(frame.bounds.bottom-frame.bounds.top)/h,viewport:[w,h]})
     }
     if(!this.cameraPan&&this.touchMode!=='pinch'&&this.touchMode!=='pan'&&this.touchMode!=='hold'){if(this.reduced.matches){this.readingView={...this.readingTarget};this.cameraMoving=false}else this.cameraMoving=!springReading(this.readingView,this.readingVelocity,this.readingTarget,dt)}
-    this.camera.zoom=this.readingView.zoom
-    if(this.readingView.x||this.readingView.y)this.camera.setViewOffset(w,h,-this.readingView.x,-this.readingView.y,w,h)
+    this.camera.zoom=this.readBase.zoom*this.readingView.zoom
+    const x=this.readBase.x*this.readingView.zoom+this.readingView.x,y=this.readBase.y*this.readingView.zoom+this.readingView.y
+    if(x||y)this.camera.setViewOffset(w,h,-x,-y,w,h)
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
-    this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
+    this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
   }
   private readWheel=(e:WheelEvent)=>{
     if(this.config.opening<READ_ANGLE||this.openingActive||!this.readingBounds||this.dragging)return
