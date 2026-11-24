@@ -7,7 +7,7 @@ import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
 import {curlTarget} from './pageChain'
 import {desiredBatch,orderedProgress,openingLeaves,activeSpan} from './pageWindow'
-import {PRESS_SCENE,coverProgress,brakeRetention,chunkAutoProgress,chunkRelease,isBrakeable} from './referenceScene'
+import {PRESS_SCENE,coverProgress,brakeRetention,chunkAutoProgress,chunkRelease,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 export class BookRuntime {
   private renderer:T.WebGLRenderer
   private scene=new T.Scene()
@@ -136,11 +136,11 @@ export class BookRuntime {
     this.host.dataset.hoverCurl=String(this.turn?.preview?this.turn.curlAmount:0)
     this.host.dataset.pageProgress=String(this.turn?.progress??0);this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(ready)
 
-    const previousPose=this.readPose;this.readPose=easeTurn(clamp01(this.open/180));if(this.readPose>0||previousPose>0)this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch-22*this.readPose),T.MathUtils.degToRad(this.config.yaw+28*this.readPose),0)
+    const previousPose=this.readPose;this.readPose=easeTurn(clamp01(this.open/180));if(this.readPose>0||previousPose>0)this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch+READING_POSE_ADAPTER.pitchOffset*this.readPose),T.MathUtils.degToRad(this.config.yaw+READING_POSE_ADAPTER.yawOffset*this.readPose),0)
     this.book.root.position.set(this.config.width/200*this.readPose,0,0).applyEuler(this.book.root.rotation)
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     this.renderer.render(this.scene,this.camera);this.drawing=false
-    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(!this.turn){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.config.pageCount].join(':');if(key!==this.groupProbeKey){this.groupProbeKey=key;this.groupProbe='';for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const ray=this.makeRay(x,y);if(ray&&this.book.pickGroup(ray)){this.groupProbe=json;break}}}this.host.dataset.groupPick=this.groupProbe}}
+    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(!this.turn){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.groupProbeKey=key;this.groupProbe='';for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];if(this.findGroup(x,y)){this.groupProbe=json;break}}}this.host.dataset.groupPick=this.groupProbe}}
     if(this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
@@ -176,7 +176,7 @@ export class BookRuntime {
     this.fill.position.set(...a.sun.map((v,i)=>mix(v,b.sun[i])*scale) as [number,number,number])
     const h=mix(a.shadowHalf,b.shadowHalf)*scale
     Object.assign(this.light.shadow.camera,{left:-h,right:h,top:h,bottom:-h,near:Math.max(.001,mix(a.near,b.near)*scale),far:mix(a.far,b.far)*scale});this.light.shadow.camera.updateProjectionMatrix()
-    this.light.shadow.bias=mix(a.bias,b.bias);this.light.shadow.normalBias=mix(a.normalBias,b.normalBias)*scale;this.light.shadow.radius=mix(a.radius,b.radius)
+    this.light.shadow.bias=mix(a.bias,b.bias);this.light.shadow.normalBias=mix(a.normalBias,b.normalBias)*scale;this.light.shadow.radius=mix(a.radius,b.radius)*mix(1,PRESS_SCENE.paper.shadowBlurMul)
   }
   // Hover only changes local curl, leaving the spine angle at its endpoint.
   previewPage(x:number,y:number){

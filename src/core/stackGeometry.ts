@@ -45,3 +45,18 @@ export function createChunkGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
  return {g,pose(chain:Chain,depth:number){for(let i=0;i<p.count;i++){const a=sampleChain(chain,original[i*3]/w+.5),off=original[i*3+2]*depth;p.setXYZ(i,a.x-a.tz*off,original[i*3+1],a.z+a.tx*off)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
 }
+
+// True triangle interior points, rather than analytic midpoints which can
+// land on a shared triangle boundary or a hidden top face after deformation.
+export function edgeTriangleCenters(g:T.BufferGeometry){
+ const p=g.getAttribute('position'),idx=g.index,out:T.Vector3[]=[]
+ if(!idx)return out
+ for(const group of g.groups){if(![0,2,3].includes(group.materialIndex??-1))continue
+   for(let i=group.start;i+2<group.start+group.count;i+=3){
+     const a=idx.getX(i),b=idx.getX(i+1),c=idx.getX(i+2)
+     const v=new T.Vector3((p.getX(a)+p.getX(b)+p.getX(c))/3,(p.getY(a)+p.getY(b)+p.getY(c))/3,(p.getZ(a)+p.getZ(b)+p.getZ(c))/3)
+     if(Math.abs(v.y)<1e-6||Math.abs(v.x)<1e-6||i%9===0)out.push(v)
+   }
+ }
+ return out
+}

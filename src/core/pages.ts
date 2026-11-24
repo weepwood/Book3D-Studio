@@ -6,6 +6,7 @@ import {createGpuPage} from './pageGpu'
 import {activeSpan,type ActiveLeaf} from './pageWindow'
 import {createChunkGeometry} from './stackGeometry'
 import {PRESS_SCENE} from './referenceScene'
+import {applyPaperShading} from './paperShading'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -72,8 +73,8 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
 }
 export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void){
   let config=c
-  const paperMat=(side:T.Side=T.FrontSide)=>new T.MeshPhongMaterial({side,shininess:PRESS_SCENE.paper.shininess,reflectivity:PRESS_SCENE.paper.reflectivity,specular:new T.Color(...PRESS_SCENE.paper.specular).multiplyScalar(PRESS_SCENE.paper.reflectivity)})
-  const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat()),right=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat())
+  const paperMat=(side:T.Side=T.FrontSide,flip=false,shaded=true)=>{const m=new T.MeshPhongMaterial({side,shininess:PRESS_SCENE.paper.shininess,reflectivity:PRESS_SCENE.paper.reflectivity,specular:new T.Color(...PRESS_SCENE.paper.specular).multiplyScalar(PRESS_SCENE.paper.reflectivity)});if(shaded)applyPaperShading(m,flip);return m}
+  const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat(T.FrontSide,true)),right=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat())
   const slots:Array<{leaf:T.Group;front:T.MeshPhongMaterial;back:T.MeshPhongMaterial;gpu:ReturnType<typeof createGpuPage>;fm:T.Mesh;bm:T.Mesh}>=[]
   left.name='Reading page left';right.name='Reading page right'
   for(const mesh of [left,right]){mesh.castShadow=true;mesh.receiveShadow=true}
@@ -88,7 +89,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     leaf.add(fm,bm);root.add(leaf);leaf.visible=false
     const value={leaf,front,back,gpu,fm,bm};slots.push(value);return value
   }
-  const chunkShape=createChunkGeometry(w,h),chunkFront=paperMat(),chunkBack=paperMat(),chunkEdge=paperMat();chunkEdge.color.set(c.paperColor)
+  const chunkShape=createChunkGeometry(w,h),chunkFront=paperMat(),chunkBack=paperMat(T.FrontSide,true),chunkEdge=paperMat(T.FrontSide,false,false);chunkEdge.color.set(c.paperColor)
   const chunk=new T.Mesh(chunkShape.g,[chunkEdge,chunkEdge,chunkEdge,chunkEdge,chunkFront,chunkBack]);chunk.name='Turning page block';chunk.castShadow=chunk.receiveShadow=true;chunk.visible=false;root.add(chunk)
   const keys=new Map<T.MeshPhongMaterial,string>()
   function assign(mat:T.MeshPhongMaterial,index:number,flip=false){

@@ -53,8 +53,10 @@ export function createGpuPage(width:number,height:number){
   texture.minFilter=texture.magFilter=T.NearestFilter;texture.generateMipmaps=false;texture.needsUpdate=true
   const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1}}
   function attach(material:T.Material){
-    material.customProgramCacheKey=()=> 'book3d-chain-roll-v1'
-    material.onBeforeCompile=shader=>{
+    const prior=material.onBeforeCompile.bind(material),priorKey=material.customProgramCacheKey()
+    material.customProgramCacheKey=()=> 'book3d-chain-roll-v1:'+priorKey
+    material.onBeforeCompile=(shader,renderer)=>{
+      prior(shader,renderer)
       Object.assign(shader.uniforms,uniforms)
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\n'+shaderSource)
         .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nvec3 ppNormal; ppShape(position,ppNormal); objectNormal=ppNormal;')

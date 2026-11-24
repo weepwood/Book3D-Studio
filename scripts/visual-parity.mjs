@@ -19,6 +19,10 @@ await record('local closed/open/turn',async()=>{
  await local.getByRole('button',{name:'下一页',exact:true}).click()
  await local.waitForFunction(()=>Number(document.querySelector('.canvas-host')?.dataset.pageProgress)>.25,{},{timeout:30000})
  await shot(local,'local-turn')
+ await local.waitForFunction(()=>document.querySelector('.canvas-host')?.dataset.pageIndex==='1',{},{timeout:60000})
+ await local.getByRole('button',{name:'下一页',exact:true}).evaluate(b=>{b.click();b.click()})
+ await local.waitForFunction(()=>document.querySelector('.canvas-host')?.dataset.pageIndex==='3',{},{timeout:60000})
+ await shot(local,'local-middle-spread')
 })
 const source=await browser.newPage({viewport})
 await record('Stripe Press source browse',async()=>{
