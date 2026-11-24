@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
 import {createTextureWarmer} from './textureWarm'
 import { bookDimensions } from './geometry'
-import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,fitReadingBounds,type ReadingView,type ReadingBounds} from './readingCamera'
+import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,fitReadingMotion,type ReadingView,type ReadingBounds} from './readingCamera'
 import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newChunkMotion,regrabChunkMotion,stepChunk,chunkCanCommit} from './chunkMotion'
@@ -45,6 +45,9 @@ export class BookRuntime {
   private orbitMoving=false
   private contextLost=false
   private perf:RenderProbe|null=null
+  private frameProbeEnabled=new URLSearchParams(location.search).get('frame')==='1'
+  private frameOverflow=0
+  private frameSamples=0
   private collisionEnabled=new URLSearchParams(location.search).get('collision')==='1'
   private collisionPeak=0
   private collisionSamples=0
@@ -296,9 +299,11 @@ export class BookRuntime {
       const viewport=this.host.getBoundingClientRect(),parent=this.host.parentElement
       const topBar=parent?.querySelector('.viewport-top')?.getBoundingClientRect(),bottomBar=parent?.querySelector('.viewport-bottom')?.getBoundingClientRect()
       const chrome={top:topBar?Math.max(0,topBar.bottom-viewport.top+12):48,bottom:bottomBar?Math.max(0,viewport.bottom-bottomBar.top+12):48}
-      const frame=this.readAutoFit?fitReadingBounds(raw,12,48,chrome):{zoom:1,x:0,y:0,bounds:raw}
+      const motion={left,right,top,bottom}
+      for(const point of this.book.motionFramePoints()){const p=point.project(this.camera);motion.left=Math.min(motion.left,p.x*w/2);motion.right=Math.max(motion.right,p.x*w/2);motion.top=Math.min(motion.top,-p.y*h/2);motion.bottom=Math.max(motion.bottom,-p.y*h/2)}
+      const frame=this.readAutoFit?fitReadingMotion(raw,motion,chrome):{zoom:1,x:0,y:0,bounds:raw,stableBounds:raw,motionBounds:raw}
       this.readBase={zoom:frame.zoom,x:frame.x,y:frame.y};this.readingBounds=frame.bounds;this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
-      this.host.dataset.readFrame=JSON.stringify({revision:++this.readFrameRevision,zoom:frame.zoom,widthRatio:(frame.bounds.right-frame.bounds.left)/w,heightRatio:(frame.bounds.bottom-frame.bounds.top)/h,viewport:[w,h],bounds:frame.bounds,chrome})
+      this.host.dataset.readFrame=JSON.stringify({revision:++this.readFrameRevision,zoom:frame.zoom,widthRatio:(frame.stableBounds.right-frame.stableBounds.left)/w,heightRatio:(frame.stableBounds.bottom-frame.stableBounds.top)/h,viewport:[w,h],bounds:frame.bounds,stableBounds:frame.stableBounds,motionBounds:frame.motionBounds,chrome})
     }
     if(!this.cameraPan&&this.touchMode!=='pinch'&&this.touchMode!=='pan'&&this.touchMode!=='hold'){if(this.reduced.matches){this.readingView={...this.readingTarget};this.cameraMoving=false}else this.cameraMoving=!springReading(this.readingView,this.readingVelocity,this.readingTarget,dt)}
     this.camera.zoom=this.readBase.zoom*this.readingView.zoom
@@ -306,6 +311,7 @@ export class BookRuntime {
     if(x||y)this.camera.setViewOffset(w,h,-x,-y,w,h)
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
+    if(this.frameProbeEnabled&&this.turn&&!this.turn.preview){this.book.root.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const points=this.book.activeFramePoints();if(points.length){let overflow=0;for(const p of points){p.project(this.camera);overflow=Math.max(overflow,(Math.abs(p.x)-1)*w/2,(Math.abs(p.y)-1)*h/2)}this.frameOverflow=Math.max(this.frameOverflow,overflow);this.host.dataset.motionFrame=JSON.stringify({samples:++this.frameSamples,overflow,peakOverflow:this.frameOverflow})}}
     this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
   }
   private readWheel=(e:WheelEvent)=>{

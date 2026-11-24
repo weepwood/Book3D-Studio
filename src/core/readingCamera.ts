@@ -1,7 +1,7 @@
 import {PRESS_SCENE as R} from './referenceScene'
 import {clamp} from './pagePhysics'
 export type ReadingView={zoom:number;x:number;y:number}
-export type ReadingBounds={width:number;height:number;left:number;right:number;top:number;bottom:number;pageWidth?:number;safeTop?:number;safeBottom?:number}
+export type ReadingBounds={width:number;height:number;left:number;right:number;top:number;bottom:number;pageWidth?:number;safeTop?:number;safeBottom?:number;restCenterY?:number}
 export const initialReadingView=():ReadingView=>({zoom:1,x:0,y:0})
 export function panLimits(b:ReadingBounds,z:number){
  const left=b.left*z,right=b.right*z,top=b.top*z,bottom=b.bottom*z
@@ -9,9 +9,9 @@ export function panLimits(b:ReadingBounds,z:number){
  // its two edges to the viewport. Coordinates are relative to viewport center.
  const x=b.width/2,y=b.height/2
  const topLimit=-y+(b.safeTop??0),bottomLimit=y-(b.safeBottom??0),fits=bottom-top<=bottomLimit-topLimit
- const offset=b.safeTop!==undefined?(topLimit+bottomLimit-top-bottom)/2:0
+ const offset=b.safeTop!==undefined?(topLimit+bottomLimit-top-bottom)/2+(b.restCenterY??0)*z:0
  // Fit math may leave a subpixel floating-point remainder at the reset pose.
- const center=Math.abs(offset)<1e-9?0:offset
+ const center=Math.abs(offset)<1e-9?0:fits?clamp(offset,topLimit-top,bottomLimit-bottom):offset
  return {minX:right-left<=b.width?0:x-right,maxX:right-left<=b.width?0:-x-left,minY:fits?center:bottomLimit-bottom,maxY:fits?center:topLimit-top}
 }
 export function clampReadingView(v:ReadingView,b:ReadingBounds):ReadingView{
@@ -67,4 +67,22 @@ export function fitReadingBounds(b:ReadingBounds,padding=12,verticalPadding=48,c
  const zoom=R.fitFraction*Math.min(safeW/w,safeH/h)
  const x=-(b.left+b.right)*zoom/2,y=-(b.top+b.bottom)*zoom/2+(top-bottom)/2
  return {zoom,x,y,bounds:{...b,...(chrome?{safeTop:top,safeBottom:bottom}:{}),left:b.left*zoom+x,right:b.right*zoom+x,top:b.top*zoom+y,bottom:b.bottom*zoom+y,pageWidth:b.pageWidth===undefined?undefined:b.pageWidth*zoom}}
+}
+
+// The static spread avoids the chrome, while the moving leaf may use the
+// free central headroom of the canvas. Solve both constraints once.
+export function fitReadingMotion(stable:ReadingBounds,motion:Pick<ReadingBounds,'left'|'right'|'top'|'bottom'>,chrome:{top:number;bottom:number}){
+ const f=fitReadingBounds(stable,12,48,chrome),w=stable.width/2,h=stable.height/2
+ const safeTop=f.bounds.safeTop!,safeBottom=f.bounds.safeBottom!,pad=Math.min(12,w*.2),motionPad=8
+ type Range={min:number;max:number;lo:number;hi:number}
+ const xs:Range[]=[{min:stable.left,max:stable.right,lo:-w+pad,hi:w-pad},{min:motion.left,max:motion.right,lo:-w+motionPad,hi:w-motionPad}]
+ const ys:Range[]=[{min:stable.top,max:stable.bottom,lo:-h+safeTop,hi:h-safeBottom},{min:motion.top,max:motion.bottom,lo:-h+motionPad,hi:h-motionPad}]
+ let zoom=f.zoom
+ for(const axis of [xs,ys])for(const lower of axis)for(const upper of axis){const extent=upper.max-lower.min;if(extent>0)zoom=Math.min(zoom,(upper.hi-lower.lo)/extent*.98)}
+ zoom=Math.max(.001,zoom)
+ const offset=(axis:Range[],preferred:number)=>clamp(preferred,Math.max(...axis.map(r=>r.lo-r.min*zoom)),Math.min(...axis.map(r=>r.hi-r.max*zoom)))
+ const x=offset(xs,-(stable.left+stable.right)*zoom/2),y=offset(ys,-(stable.top+stable.bottom)*zoom/2+(safeTop-safeBottom)/2)
+ const project=(b:typeof motion)=>({left:b.left*zoom+x,right:b.right*zoom+x,top:b.top*zoom+y,bottom:b.bottom*zoom+y})
+ const stableBounds=project(stable),motionBounds=project(motion),restCenterY=(stableBounds.top+stableBounds.bottom-safeTop+safeBottom)/2
+ return {zoom,x,y,bounds:{...stable,...stableBounds,safeTop,safeBottom,restCenterY,pageWidth:stable.pageWidth===undefined?undefined:stable.pageWidth*zoom},stableBounds,motionBounds}
 }
