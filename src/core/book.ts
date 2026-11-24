@@ -1,5 +1,4 @@
 import * as T from 'three'
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { BookConfig } from './schema'
 import { bookDimensions, openingPose, skinnedBoard, boardGeometry } from './geometry'
 import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
@@ -8,6 +7,7 @@ import {batchLayout,leafDepths,gravityDrop,activeSpan,chunkDepths,type ActiveLea
 import {createStackGeometry,stackAngle,surfaceChain,turningChain,poseSurface,edgeTriangleCenters} from './stackGeometry'
 import {groupCount} from './referenceScene'
 import {sampleChain,type Chain} from './pageChain'
+import {createBindingGeometry} from './bindingGeometry'
 const texture = (canvas: HTMLCanvasElement) => {
   const t = new T.CanvasTexture(canvas)
   t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4
@@ -83,9 +83,11 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   root.add(pages.root,pages.right);pagePivot.add(pages.left)
   pages.right.position.set(0,0,0)
   pages.left.rotation.y=Math.PI;pages.left.position.x=inset+pageWidth/2
-  const spineWidth=Math.min(.075,Math.max(.027,inset*1.4))
-  const spine=mesh(new RoundedBoxGeometry(spineWidth,h,d,4,c.spineStyle==='rounded'?Math.min(spineWidth*.49,d*.24):.002),[board,spineFace,board,board,board,board],root,-w/2+spineWidth*.42,0,0)
-  spine.name='Spine'
+  const outerBinding=createBindingGeometry(h),innerBindingShape=createBindingGeometry(h-2*radius,true)
+  spineFace.side=T.DoubleSide
+  const lining=new T.MeshStandardMaterial({color:c.paperColor,roughness:.95,side:T.DoubleSide})
+  const spine=mesh(outerBinding.g,spineFace,root,0,0,0);spine.name='Spine'
+  const innerBinding=mesh(innerBindingShape.g,lining,root,0,0,0);innerBinding.name='Inner spine lining'
   const hinge=new T.Group();hinge.position.set(-w/2,0,coverZ);root.add(hinge)
   const rig=skinnedBoard(w,h,t,radius,[board,board,board,board,front,inside])
   rig.mesh.name='Front cover';rig.mesh.castShadow=true;rig.mesh.receiveShadow=true;hinge.add(rig.mesh)
@@ -134,7 +136,8 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     hinge.rotation.y=pose.hinge
     const flatten=easeTurn(clamp01((deg-85)/95));hinge.position.z=coverZ*(1-2*flatten)
     pagePivot.position.copy(hinge.position);pagePivot.rotation.y=pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15
-    spine.scale.z=1-(1-t/d)*flatten;spine.position.z=-coverZ*flatten
+    const bindingPose={hingeX:hinge.position.x,rearZ:-coverZ,frontZ:hinge.position.z,angle:hinge.rotation.y,board:t,inset,rounded:current.spineStyle==='rounded'}
+    outerBinding.pose(bindingPose);innerBindingShape.pose(bindingPose)
     rig.bones.forEach((bone,i)=>{bone.rotation.y=i===0?0:pose.bone})
     refreshPages();root.updateMatrixWorld(true);rig.mesh.computeBoundingSphere();rig.mesh.computeBoundingBox()
   }
@@ -150,7 +153,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     }
     if(previous.finish!==next.finish){const old=board.bumpMap;const nextBump=next.finish==='cloth'?bump():null;for(const m of [board,front,rear,spineFace]){m.bumpMap=nextBump;m.bumpScale=nextBump ? .006:0;m.clearcoat=next.finish==='gloss'?.85:0;m.needsUpdate=true}old?.dispose()}
     board.color.set(next.coverColor);for(const m of [board,front,rear,spineFace])m.roughness=next.roughness
-    if(previous.paperColor!==next.paperColor){inside.color.set(next.paperColor);for(const [mat,vertical] of [[edgeV,true],[edgeH,false]] as const){mat.map?.dispose();mat.map=paper(next.paperColor,vertical);mat.needsUpdate=true}}
+    if(previous.paperColor!==next.paperColor){inside.color.set(next.paperColor);lining.color.set(next.paperColor);for(const [mat,vertical] of [[edgeV,true],[edgeH,false]] as const){mat.map?.dispose();mat.map=paper(next.paperColor,vertical);mat.needsUpdate=true}}
   }
   function activePickPoint(){const slot=pages.slots[0];if(!slot?.leaf.visible||!activeTurns[0]||activeTurns[0].progress<.12||activeTurns[0].progress>.88)return null;return slot.leaf.localToWorld(slot.gpu.pickPoint(.75,0))}
   function readingPickPoint(){const chain=rightLayers[2];if(!chain)return null;const s=sampleChain(chain,.85);return pages.right.localToWorld(new T.Vector3(s.x-pageWidth/2,0,s.z))}
@@ -169,7 +172,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     }
     return best
   }
-  function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
+  function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
   return {root,hinge,pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
