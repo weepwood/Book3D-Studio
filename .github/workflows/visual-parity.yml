@@ -1,0 +1,32 @@
+name: Reference visual evidence
+on:
+  pull_request:
+    paths:
+      - 'scripts/visual-parity.mjs'
+      - '.github/workflows/visual-parity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: visual-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          npm run dev -- --host 127.0.0.1 --port 4173 --strictPort > /tmp/book3d-vite.log 2>&1 &
+          for n in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done
+          node scripts/visual-parity.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reference-visual-evidence
+          path: visual-parity/

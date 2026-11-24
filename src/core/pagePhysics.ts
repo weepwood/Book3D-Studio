@@ -1,6 +1,6 @@
 import {PRESS_REFERENCE as R} from './pressReference'
 export const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x))
-export type TurnState={direction:1|-1;progress:number;renderProgress:number;velocity:number;grip:number;preview:boolean;dragTarget:number;curlAmount:number;grabU:number}
+export type TurnState={direction:1|-1;progress:number;renderProgress:number;velocity:number;grip:number;preview:boolean;dragTarget:number;curlAmount:number;grabU:number;span?:number;chunkElapsed?:number;dragOrigin?:number}
 export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {direction,progress:0,renderProgress:0,velocity:0,grip:clamp(grip,-1,1),preview,dragTarget:0,curlAmount:0,grabU:1}}
 // Angular snap behavior observed in the reference. The editor duration remains an optional time scale.
 export function stepTurn(progress:number,velocity:number,target:number,dt:number,duration:number,queued=false){
@@ -15,7 +15,7 @@ export function stepTurn(progress:number,velocity:number,target:number,dt:number
     else{
       const near=1-Math.min(distance/R.nearRange,1)
       speed+=R.snapAcceleration*sign*Math.sin(Math.min(distance,Math.PI/2))*f
-      speed*=Math.pow(1-Math.min(.98,R.damping*R.damping+near*near*R.nearDamping),f)
+      speed*=Math.pow(1-Math.min(.98,.4*R.damping+near*near*R.nearDamping),f)
       angle=clamp(angle+speed*f,0,Math.PI)
       if(angle===0||angle===Math.PI)speed=0
     }

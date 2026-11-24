@@ -9,6 +9,8 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
  await expect(host).toHaveAttribute('data-page-gpu','chain-texture')
+ await expect(host).toHaveAttribute('data-stack-geometry','layered')
+ await expect(host).toHaveAttribute('data-opening-leaves','0')
  const pick=JSON.parse((await host.getAttribute('data-right-pick'))!) as [number,number]
  await page.mouse.move(...pick)
  await expect(host).toHaveAttribute('data-page-turn','preview')
@@ -36,4 +38,61 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  await page.getByRole('button',{name:'闭合书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','false')
  expect(errors).toEqual([])
+})
+
+
+test('真实活动页重新抓取与取消',async({page},testInfo)=>{
+ await page.goto('/')
+ await page.getByRole('button',{name:/内页/}).first().click()
+ const duration=page.getByRole('spinbutton',{name:'翻页响应 数值'});await duration.fill('2');await duration.press('Enter')
+ await page.getByRole('button',{name:/模型/}).click()
+ const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
+ await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ await page.getByRole('button',{name:'下一页',exact:true}).click()
+ // Original controller brakes the moving leaves from any valid reading-area
+ // press, rather than requiring a rapidly moving sheet's precise centre.
+ await expect.poll(async()=>Number(await host.getAttribute('data-page-progress')),{timeout:15000}).toBeGreaterThan(.15)
+ const point=JSON.parse((await host.getAttribute('data-right-pick'))!) as [number,number]
+ await page.mouse.move(...point);await page.mouse.down()
+ await expect(host).toHaveAttribute('data-pointer-pick','active')
+ await expect(host).toHaveAttribute('data-regrab','true',{timeout:5000})
+ await page.mouse.move(point[0]+24,point[1],{steps:3})
+ await page.mouse.up()
+ await expect(host).toHaveAttribute('data-regrab','false')
+ await expect(host).toHaveAttribute('data-page-turn','idle',{timeout:55000})
+ await expect(host).toHaveAttribute('data-page-index','0')
+ await page.screenshot({path:testInfo.outputPath('regrab-settled.png')})
+})
+
+
+test('真实书芯边缘成组拾取与释放',async({page},testInfo)=>{
+ await page.goto('/')
+ const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
+ await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ await expect.poll(async()=>Boolean(await host.getAttribute('data-group-pick'))).toBe(true)
+ const point=JSON.parse((await host.getAttribute('data-group-pick'))!) as [number,number]
+ await page.mouse.move(...point);await page.mouse.down();
+ await expect(host).toHaveAttribute('data-pointer-pick','group');await page.mouse.move(point[0]-90,point[1],{steps:4})
+ await expect.poll(async()=>Number(await host.getAttribute('data-group-drag')),{timeout:5000}).toBeGreaterThan(1)
+ const count=Number(await host.getAttribute('data-group-drag'))
+ await page.screenshot({path:testInfo.outputPath('edge-group-drag.png')})
+ await page.mouse.up()
+ await expect(host).toHaveAttribute('data-page-target',String(count))
+ await expect(host).toHaveAttribute('data-page-index',String(count),{timeout:55000})
+})
+
+
+test('超六张整块书芯跳转',async({page},testInfo)=>{
+ await page.goto('/')
+ await page.getByRole('button',{name:/内页/}).first().click()
+ const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
+ await page.getByRole('button',{name:/模型/}).click()
+ const host=page.locator('.canvas-host');await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ await page.getByRole('button',{name:'下一页',exact:true}).evaluate((b:HTMLButtonElement)=>{for(let i=0;i<12;i++)b.click()})
+ await expect(host).toHaveAttribute('data-page-target','12')
+ await expect.poll(async()=>Number(await host.getAttribute('data-peak-chunk-leaves')),{timeout:15000}).toBe(12)
+ if(Number(await host.getAttribute('data-chunk-leaves'))===12)await page.screenshot({path:testInfo.outputPath('large-chunk.png')})
+ await expect(host).toHaveAttribute('data-page-index','12',{timeout:55000})
 })

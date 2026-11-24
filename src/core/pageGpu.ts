@@ -1,6 +1,6 @@
 import * as T from 'three'
 import {PRESS_REFERENCE as R} from './pressReference'
-import {makeChain,type Chain} from './pageChain'
+import {makeChain,rollPoint,type Chain} from './pageChain'
 export function packChain(chain:Chain,data=new Float32Array(R.chainNodes*2*4)){
   for(let i=0;i<R.chainNodes;i++){
     const a=i*4,b=(R.chainNodes+i)*4
@@ -53,8 +53,10 @@ export function createGpuPage(width:number,height:number){
   texture.minFilter=texture.magFilter=T.NearestFilter;texture.generateMipmaps=false;texture.needsUpdate=true
   const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1}}
   function attach(material:T.Material){
-    material.customProgramCacheKey=()=> 'book3d-chain-roll-v1'
-    material.onBeforeCompile=shader=>{
+    const prior=material.onBeforeCompile.bind(material),priorKey=material.customProgramCacheKey()
+    material.customProgramCacheKey=()=> 'book3d-chain-roll-v1:'+priorKey
+    material.onBeforeCompile=(shader,renderer)=>{
+      prior(shader,renderer)
       Object.assign(shader.uniforms,uniforms)
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\n'+shaderSource)
         .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nvec3 ppNormal; ppShape(position,ppNormal); objectNormal=ppNormal;')
@@ -62,11 +64,12 @@ export function createGpuPage(width:number,height:number){
     }
   }
   const depth=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,side:T.DoubleSide});attach(depth)
-  function update(progress:number,flex:number,amount:number,grip:number,grabU:number){
-    packChain(makeChain(width,progress,flex),data);texture.needsUpdate=true
+  let current=makeChain(width,0,0),pose={progress:0,amount:0,grip:0,grabU:1}
+  function update(progress:number,flex:number,amount:number,grip:number,grabU:number,chain?:Chain){
+    current=chain??makeChain(width,progress,flex);pose={progress,amount,grip,grabU};packChain(current,data);texture.needsUpdate=true
     uniforms.ppAmount.value=amount;uniforms.ppTilt.value=grip*R.curl.foldTiltDeg*Math.PI/180
     uniforms.ppSpan.value=R.curl.span/R.sourcePageWidth*width*(1+(1-Math.max(0,Math.min(1,grabU)))*1.2)
     uniforms.ppLift.value=progress>.5?-1:1
   }
-  return {attach,depth,texture,update,dispose(){texture.dispose();depth.dispose()}}
+  return {attach,depth,texture,update,pickPoint(u:number,v:number){return new T.Vector3(...rollPoint(current,u,v,height,pose.amount,pose.grip,pose.grabU,pose.progress))},pickGeometry(){const g=new T.PlaneGeometry(width,height,48,18),uv=g.getAttribute('uv'),p=g.getAttribute('position');for(let i=0;i<p.count;i++){const xyz=rollPoint(current,uv.getX(i),uv.getY(i)-.5,height,pose.amount,pose.grip,pose.grabU,pose.progress);p.setXYZ(i,...xyz)}p.needsUpdate=true;g.computeBoundingSphere();return g},dispose(){texture.dispose();depth.dispose()}}
 }
