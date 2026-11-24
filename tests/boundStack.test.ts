@@ -1,5 +1,6 @@
+import * as T from 'three'
 import {describe,it,expect} from 'vitest'
-import {boundLayer,boundLayers,bindingCompression,bindingHeight,createStackGeometry} from '../src/core/stackGeometry'
+import {boundLayer,boundLayers,bindingCompression,bindingHeight,createStackGeometry,pickedDepth} from '../src/core/stackGeometry'
 import {sampleChain} from '../src/core/pageChain'
 import {bookDimensions} from '../src/core/geometry'
 describe('装订收拢与外缘厚度守恒',()=>{
@@ -31,3 +32,5 @@ describe('装订收拢与外缘厚度守恒',()=>{
 it('展开纸层的外缘切线平顺落地，弧长和厚度仍守恒',()=>{for(const depth of [.02,.14,.28,.55]){const width=1.53,c=bindingCompression(1,.7,width,depth),chain=boundLayer(width,depth,c);expect(chain.tangents[65]).toBeCloseTo(0,8);expect(chain.tangents[64]).toBeCloseTo(1,8);expect(bindingHeight(depth,c)+sampleChain(chain,1).z).toBeCloseTo(depth,4)}})
 
  it('五层静止书芯在厚书两侧保持同一物理外缘与层间顺序',()=>{for(const depth of [.02,.27,.75]){const w=.88,c=bindingCompression(1,1,w,depth),layers=[0,.25,.5,.75,1].map(f=>boundLayer(w,depth*f,c));for(let i=0;i<=32;i++){let prev=-Infinity;for(let j=0;j<layers.length;j++){const z=bindingHeight(depth*j/4,c)+sampleChain(layers[j],i/32).z;expect(z).toBeGreaterThanOrEqual(prev-1e-8);prev=z}}for(const sign of [1,-1] as const){const g=createStackGeometry(w,3,4);g.pose(layers,depth,sign,c);const p=g.g.getAttribute('position');expect(Array.from(p.array).every(Number.isFinite)).toBe(true);expect(g.g.boundingBox!.max.z-g.g.boundingBox!.min.z).toBeCloseTo(depth,3);g.g.dispose()}}})
+
+it('弯曲书芯真实三角形插值保留原始材料层深，左右对称',()=>{for(const sign of [1,-1] as const){const w=.88,depth=.75,c=bindingCompression(1,1,w,depth),layers=[0,.25,.5,.75,1].map(f=>boundLayer(w,depth*f,c)),shape=createStackGeometry(w,3,4);shape.pose(layers,depth,sign,c);const g=shape.g,p=g.getAttribute('position'),z=g.getAttribute('paperDepth'),idx=g.index!,group=g.groups.find(x=>x.materialIndex===0)!;for(let k=group.start;k<group.start+group.count;k+=3){const a=idx.getX(k),b=idx.getX(k+1),cc=idx.getX(k+2),pt=new T.Vector3().fromBufferAttribute(p,a).multiplyScalar(.2).addScaledVector(new T.Vector3().fromBufferAttribute(p,b),.3).addScaledVector(new T.Vector3().fromBufferAttribute(p,cc),.5);const q=z.getX(a)*.2+z.getX(b)*.3+z.getX(cc)*.5;expect(pickedDepth(g,{a,b,c:cc},pt,sign)).toBeCloseTo(sign===1?1-q:q,5)}g.dispose()}})

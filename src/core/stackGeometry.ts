@@ -44,7 +44,16 @@ export function stackSection(layers:Chain[],depth:number,compression:number,u:nu
 }
 export function createStackGeometry(w:number,h:number,depthSegments=2){
  const g=new T.BoxGeometry(w,h,1,48,1,depthSegments),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),originalUV=Float32Array.from(uv.array),normal=g.getAttribute('normal'),edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
+ // Original material depth coordinate survives all bending and compression.
+ const depthCoord=new T.Float32BufferAttribute(Array.from({length:p.count},(_,i)=>original[i*3+2]+.5),1);g.setAttribute('paperDepth',depthCoord)
  return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],fraction=clamp(sign===1?z+.5:.5-z),layer=fraction*(layers.length-1),lo=Math.min(layers.length-2,Math.floor(layer)),q=layer-lo,a=sampleChain(layers[lo],x/w+.5),b=sampleChain(layers[lo+1],x/w+.5);p.setXYZ(i,T.MathUtils.lerp(a.x,b.x,q)-w/2,y,z*depth+sign*(T.MathUtils.lerp(a.z,b.z,q)-depth*clamp(compression)*fraction))}const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+}
+// Interpolate the material depth on the actual hit triangle, not world Z.
+export function pickedDepth(g:T.BufferGeometry,face:{a:number;b:number;c:number},point:T.Vector3,sign:1|-1){
+ const pos=g.getAttribute('position'),depth=g.getAttribute('paperDepth');if(!depth)return null
+ const a=new T.Vector3().fromBufferAttribute(pos,face.a),b=new T.Vector3().fromBufferAttribute(pos,face.b),c=new T.Vector3().fromBufferAttribute(pos,face.c),weights=T.Triangle.getBarycoord(point,a,b,c,new T.Vector3())
+ if(!weights)return null
+ const q=clamp(weights.x*depth.getX(face.a)+weights.y*depth.getX(face.b)+weights.z*depth.getX(face.c));return sign===1?1-q:q
 }
 export function poseSurface(g:T.BufferGeometry,chain:Chain,flip:boolean){
  const uv=g.getAttribute('uv'),p=g.getAttribute('position')
