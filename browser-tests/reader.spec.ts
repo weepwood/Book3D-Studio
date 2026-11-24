@@ -58,3 +58,19 @@ test('真实活动页重新抓取与取消',async({page},testInfo)=>{
  await expect(host).toHaveAttribute('data-page-turn','idle',{timeout:55000})
  await page.screenshot({path:testInfo.outputPath('regrab-settled.png')})
 })
+
+
+test('真实书芯边缘成组拾取与释放',async({page},testInfo)=>{
+ await page.goto('/')
+ const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
+ await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ const point=JSON.parse((await host.getAttribute('data-group-pick'))!) as [number,number]
+ await page.mouse.move(...point);await page.mouse.down();await page.mouse.move(point[0]-90,point[1],{steps:4})
+ await expect.poll(async()=>Number(await host.getAttribute('data-group-drag')),{timeout:5000}).toBeGreaterThan(1)
+ const count=Number(await host.getAttribute('data-group-drag'))
+ await page.screenshot({path:testInfo.outputPath('edge-group-drag.png')})
+ await page.mouse.up()
+ await expect(host).toHaveAttribute('data-page-target',String(count))
+ await expect(host).toHaveAttribute('data-page-index',String(count),{timeout:55000})
+})

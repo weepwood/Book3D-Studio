@@ -133,7 +133,7 @@ export class BookRuntime {
 
     this.book.root.position.set(this.config.width/200*easeTurn(clamp01(this.open/180)),0,0).applyEuler(this.book.root.rotation)
     this.renderer.render(this.scene,this.camera);this.drawing=false
-    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};const mesh=this.book.readingSurfaces[1];this.host.dataset.rightPick=project(mesh.localToWorld(new T.Vector3((this.config.width-2*this.config.pageInset)/100*.35,0,0)));this.host.dataset.groupPick=project(this.book.groupPickPoint(1));this.host.dataset.activePick=this.turn&&!this.turn.preview&&!this.followers.length?project(this.book.activePickPoint()):''}
+    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.groupPick=project(this.book.groupPickPoint(1));this.host.dataset.activePick=this.turn&&!this.turn.preview&&!this.followers.length?project(this.book.activePickPoint()):''}
     if(this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){

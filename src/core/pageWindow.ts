@@ -3,7 +3,7 @@ import {clamp} from './pagePhysics'
 // Reference keeps six live leaves near the split. Here the same limit bounds
 // a contiguous active batch; stationary stack meshes represent the remainder.
 export const LIVE_LEAF_LIMIT=6
-export type ActiveLeaf={direction:1|-1;progress:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}
+export type ActiveLeaf={direction:1|-1;progress:number;opening?:boolean;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}
 export function batchLayout(index:number,count:number,depth:number,direction:1|-1,requested:number){
   const unit=depth/Math.max(1,count),i=clamp(index,0,count)
   const active=Math.max(0,Math.min(LIVE_LEAF_LIMIT,Math.floor(requested),direction===1?count-i:i))
@@ -32,5 +32,5 @@ export function gravityDrop(elapsedMs:number,slot:number,count:number){
 export function openingLeaves(index:number,count:number,elapsedMs:number):ActiveLeaf[]{
  const direction=index<count?1:-1,available=direction===1?count-index:index,n=Math.min(LIVE_LEAF_LIMIT,available)
  if(n<=0||elapsedMs>=n*R.gravityDelayMs+R.gravityDropMs)return []
- return Array.from({length:n},(_,slot)=>({direction,progress:.5*(1-gravityDrop(elapsedMs,slot,n)),grip:0,curlAmount:0,grabU:1}))
+ return Array.from({length:n},(_,slot)=>({direction,opening:true,progress:.5*(1-gravityDrop(elapsedMs,slot,n)),grip:0,curlAmount:0,grabU:1}))
 }
