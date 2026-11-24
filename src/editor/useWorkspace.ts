@@ -9,7 +9,7 @@ export function useWorkspace(){
   const writable=useRef(true), queue=useRef(Promise.resolve()), revision=useRef(0)
   useEffect(()=>{let alive=true;loadWorkspace().then(w=>{if(alive&&w)setState({w,h:history(w.projects.find(p=>p.id===w.active)!.config)})}).catch(()=>{if(alive){writable.current=false;setStorageError('无法读取本地工作区，已保护原数据不被覆盖，请导出备份。')}}).finally(()=>{if(alive)setReady(true)});return()=>{alive=false}},[])
   useEffect(()=>{if(!ready||!writable.current)return;const id=++revision.current;setSaved(false)
-    queue.current=queue.current.catch(()=>{}).then(()=>persistWorkspace(state.w)).then(()=>{if(id===revision.current){setSaved(true);setStorageError('')}}).catch(()=>{if(id===revision.current){setSaved(false);setStorageError('本地保存失败，请导出项目备份。')}})
+    queue.current=queue.current.catch(()=>{}).then(()=>id===revision.current?persistWorkspace(state.w):undefined).then(()=>{if(id===revision.current){setSaved(true);setStorageError('')}}).catch(()=>{if(id===revision.current){setSaved(false);setStorageError('本地保存失败，请导出项目备份。')}})
   },[state.w,ready])
   function apply(fn:(h:History)=>History){setState(s=>{const h=fn(s.h);return h===s.h?s:{h,w:saveProject(s.w,s.w.active,h.present)}})}
   function setConfig(fn:BookConfig|((c:BookConfig)=>BookConfig),group=''){const now=Date.now();apply(h=>edit(h,typeof fn==='function'?fn(h.present):fn,group,now))}
