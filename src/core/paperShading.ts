@@ -7,9 +7,12 @@ export function paperShadowChunk(source:string){
  const sample=(sign:number)=>call.replace('vDirectionalShadowCoord[ i ] )', 'vDirectionalShadowCoord[ i ] + vec4( vec2( '+(sign*.45).toFixed(2)+', '+(sign*.25).toFixed(2)+' ) / directionalLightShadow.shadowMapSize * vDirectionalShadowCoord[ i ].w, 0.0, 0.0 ) )')
  return source.replace(call,'( 0.5 * '+sample(1)+' + 0.5 * '+sample(-1)+' )')
 }
+// Limit additive RGB grain on very dark inks/endpapers. Keep the observed
+// source amplitude on lit paper; this luminance cap is an editor adaptation.
+export function paperGrainAmplitude(lum:number,strength:number=R.paper.shadowGrain){const t=T.MathUtils.smoothstep(lum,.3,1.2);return Math.min((.3+.7*(1-t))*strength*.75,Math.max(0,lum)*.45)}
 export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
  const p=R.paper,side=flip?1:0
- mat.customProgramCacheKey=()=> 'book3d-paper-gutter-v2'
+ mat.customProgramCacheKey=()=> 'book3d-paper-gutter-v3'
  mat.onBeforeCompile=shader=>{
    Object.assign(shader.uniforms,{paperFlip:{value:side},paperBounce:{value:new T.Color(...p.bounceColor)},paperGrain:{value:p.shadowGrain},paperEdge:{value:new T.Vector3(p.edgeBand,p.edgeBright,p.edgeDark)}})
    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 paperUV;').replace('#include <uv_vertex>','#include <uv_vertex>\npaperUV=uv;')
@@ -49,7 +52,8 @@ export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
        vec2 pxy=gl_FragCoord.xy;
        vec3 noise=vec3(fract(sin(dot(pxy,vec2(17.31,87.19)))*23453.123),fract(sin(dot(pxy,vec2(43.73,19.81)))*34732.321),fract(sin(dot(pxy,vec2(79.39,53.11)))*19721.213))-.5;
        float lum=dot(outgoingLight,vec3(.2126,.7152,.0722));
-       outgoingLight+=noise*(.3+.7*(1.0-smoothstep(.3,1.2,lum)))*paperGrain*.75;
+       float amplitude=min((.3+.7*(1.0-smoothstep(.3,1.2,lum)))*paperGrain*.75,max(0.0,lum)*.45);
+       outgoingLight=max(vec3(0.0),outgoingLight+noise*amplitude);
        #include <opaque_fragment>
      `)
  }
