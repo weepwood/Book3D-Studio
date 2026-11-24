@@ -99,10 +99,10 @@ export class BookRuntime {
     if(this.index>leafCount(c)||this.turn&&nextLeaf(this.index,this.turn.direction,leafCount(c))===this.index){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.dragging=false;this.releaseGoal=null}
     this.settledIndex=-1;this.apply(c)
   }
-  beginPageDrag(direction:1|-1,grip=0){if(this.open<179.5||(this.turn&&!this.turn.preview)||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;t.grip=grip;t.velocity=0;this.turn=t;this.dragging=true;this.releaseGoal=null;this.invalidate();return true}
+  beginPageDrag(direction:1|-1,grip=0){if(this.config.opening<READ_ANGLE||this.open<179.5||(this.turn&&!this.turn.preview)||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;t.grip=grip;t.velocity=0;this.turn=t;this.dragging=true;this.releaseGoal=null;this.invalidate();return true}
   dragPage(progress:number,velocity=0){if(this.dragging&&this.turn){this.turn.progress=clamp01(progress);this.turn.velocity=Math.max(-4,Math.min(4,velocity));this.invalidate()}}
   endPageDrag(commit:boolean|null=null){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??releaseCommit(t.progress,t.velocity);const index=accepted?nextLeaf(this.index,t.direction,leafCount(this.config)):this.index;this.dragging=false;this.releaseGoal=accepted?1:0;this.invalidate();return index}
-  previewPage(x:number,y:number){if(this.open<179.5||this.reduced.matches||this.dragging||this.index!==this.config.pageIndex||this.config.pageHover<=0||this.turn&&!this.turn.preview){this.clearPageHover();return}
+  previewPage(x:number,y:number){if(this.config.opening<READ_ANGLE||this.open<179.5||this.reduced.matches||this.dragging||this.index!==this.config.pageIndex||this.config.pageHover<=0||this.turn&&!this.turn.preview){this.clearPageHover();return}
     const hit=this.pageHit(x,y);if(!hit||hit.edge<.72||nextLeaf(this.index,hit.direction,leafCount(this.config))===this.index){this.clearPageHover();return}
     if(!this.turn||this.turn.direction!==hit.direction)this.turn=newTurn(hit.direction,hit.grip,true)
     this.turn.grip=hit.grip;this.hoverGoal=.06*this.config.pageHover*(hit.edge-.72)/.28;this.invalidate()

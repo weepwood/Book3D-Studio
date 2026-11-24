@@ -14,7 +14,7 @@ export function curlPoint(u:number,v:number,p:number,width:number,height:number,
   u=clamp01(u);p=clamp01(p)
   const envelope=Math.sin(Math.PI*p)
   const localGrip=clamp(1-Math.abs(v*2-grip)/1.4)
-  const angle=Math.PI*p, bend=Math.min(angle,Math.PI-angle)*clamp01(curl)*clamp(.78+corner*.18*localGrip+Math.abs(velocity)*.055,0,.97)
+  const angle=Math.PI*p, bend=Math.min(angle,Math.PI-angle)*clamp01(curl)*clamp(.78+corner*.06*localGrip+Math.abs(velocity)*.055,0,.97)
   const a=angle-bend, k=2*bend, end=a+k*u
   const x=Math.abs(k)<1e-6?width*u*Math.cos(angle):width*(Math.sin(end)-Math.sin(a))/k
   const z=Math.abs(k)<1e-6?width*u*Math.sin(angle):width*(Math.cos(a)-Math.cos(end))/k
