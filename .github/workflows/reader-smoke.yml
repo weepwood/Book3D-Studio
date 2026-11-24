@@ -14,6 +14,7 @@ on:
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
+      - 'src/core/chunkMotion.ts'
       - 'src/core/book.ts'
       - 'src/core/geometry.ts'
       - 'src/core/runtime.ts'

@@ -50,11 +50,22 @@ export function chunkRowProgress(progress:number,heightFraction:number,direction
  const lag=Math.min(p*Math.PI*(1-smooth)*fall,.42*fall),q=clamp(p-lag/Math.PI)
  return direction===1?q:1-q
 }
+export function chunkEndpointWeight(p:number){const t=clamp(Math.min(p,1-p)/.15);return 1-t*t*(3-2*t)}
+// Independent world-space lift; zero at the sewing edge, smoothly applied
+// across the first .2 of page width. Tangents track the displaced curve.
+export function liftChunkChain(chain:Chain,lift:number,progress:number):Chain{
+ if(lift===0)return chain
+ const n=chain.positions.length/2,positions=chain.positions.slice(),tangents=chain.tangents.slice(),p=clamp(progress),sign=1-2*p*p*(3-2*p)
+ for(let i=0;i<n;i++){const u=clamp(i/(n-1)/.2),z=lift*u*u*(3-2*u);positions[i*2]-=chain.tangents[i*2+1]*z*sign;positions[i*2+1]+=chain.tangents[i*2]*z*sign}
+ for(let i=0;i<n;i++){const a=Math.max(0,i-1)*2,b=Math.min(n-1,i+1)*2,x=positions[b]-positions[a],z=positions[b+1]-positions[a+1],d=Math.hypot(x,z)||1;tangents[i*2]=x/d;tangents[i*2+1]=z/d}
+ return {width:chain.width,positions,tangents}
+}
+export type ChunkLayer={chain:Chain;x:number;z:number}
 export function createChunkGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
- return {g,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain){
+ return {g,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
-   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),a=sampleChain(rows?.[row]??chain,original[i*3]/w+.5),off=original[i*3+2]*depth;p.setXYZ(i,a.x-a.tz*off,y,a.z+a.tx*off)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
+   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
  }}
 }
 
