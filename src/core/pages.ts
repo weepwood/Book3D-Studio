@@ -43,7 +43,7 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
     ctx.strokeStyle='#a6a18e';ctx.beginPath();ctx.moveTo(48,84);ctx.lineTo(w-48,84);ctx.stroke()
     ctx.font='38px Georgia';ctx.fillText(index===0?c.title:title,48,h*.23,w-96)
     ctx.font='24px Georgia';let y=h*.34
-    for(let paragraph=0;paragraph<2;paragraph++){let line='';for(const word of text.split(' ')){const next=line?line+' '+word:word;if(ctx.measureText(next).width>w-96){ctx.fillText(line,48,y);y+=34;line=word}else line=next}if(line){ctx.fillText(line,48,y);y+=34}y+=24;if(y>h*.77)break}
+    for(let paragraph=0;paragraph<2;paragraph++){let line='';for(const word of text.split(' ')){const next=line?line+' '+word:word;if(ctx.measureText(next).width>w-96){if(y>h-90)break;ctx.fillText(line,48,y);y+=34;line=word}else line=next}if(line&&y<=h-90){ctx.fillText(line,48,y);y+=34}y+=24;if(y>h*.77)break}
     ctx.font='18px serif';ctx.textAlign='center';ctx.fillText(String(index+1),w/2,h-42)
   }
   const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;texture.anisotropy=4

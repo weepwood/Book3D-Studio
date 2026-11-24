@@ -21,6 +21,7 @@ export class BookRuntime {
   private index=0
   private turn:{direction:1|-1;progress:number;elapsed:number}|null=null
   private dragging=false
+  private settledIndex=-1
   private config:BookConfig
   private disposed=false
   private reduced=window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -63,11 +64,11 @@ export class BookRuntime {
     this.book.setOpening(this.open)
     const target=nextLeaf(0,this.config.pageIndex,leafCount(this.config))
     if(this.config.opening<READ_ANGLE||this.reduced.matches){this.turn=null;this.dragging=false;this.index=target}
-    else if(this.open>=READ_ANGLE){
+    else if(this.open>=READ_ANGLE-.5){
       if(!this.turn&&this.index!==target)this.turn={direction:target>this.index?1:-1,progress:0,elapsed:0}
       if(this.turn&&!this.dragging){const t=this.turn;const commit=target!==this.index&&Math.sign(target-this.index)===t.direction;const goal=commit?1:0;t.progress=clamp01(t.progress+(commit?1:-1)*dt/this.config.pageDuration);if(Math.abs(goal-t.progress)<.00001){if(commit)this.index=nextLeaf(this.index,t.direction,leafCount(this.config));this.turn=null}}
     }
-    this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:easeTurn(this.turn.progress)}:null)
+    if(this.turn||this.settledIndex!==this.index){this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:easeTurn(this.turn.progress)}:null);this.settledIndex=this.turn?-1:this.index}
     this.book.root.position.set(this.config.width/200*easeTurn(clamp01(this.open/180)),0,0).applyEuler(this.book.root.rotation)
     this.renderer.render(this.scene,this.camera)
     if(Math.abs(this.open-this.config.opening)>0.0001||Math.abs(this.velocity)>0.0001||(!this.dragging&&(this.turn!==null||this.index!==target)))this.frame=requestAnimationFrame(this.draw)
@@ -83,9 +84,9 @@ export class BookRuntime {
     const rebuild=keys.some(k=>this.config[k]!==c[k]);this.config={...c}
     if(rebuild){this.turn=null;this.dragging=false;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)){this.index=leafCount(c);this.turn=null;this.dragging=false}
-    this.apply(c)
+    this.settledIndex=-1;this.apply(c)
   }
-  beginPageDrag(direction:1|-1){if(this.open<READ_ANGLE||this.turn||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;this.dragging=true;this.turn={direction,progress:0,elapsed:0};this.invalidate();return true}
+  beginPageDrag(direction:1|-1){if(this.open<READ_ANGLE-.5||this.turn||this.index!==this.config.pageIndex||nextLeaf(this.index,direction,leafCount(this.config))===this.index||this.reduced.matches)return false;this.dragging=true;this.turn={direction,progress:0,elapsed:0};this.invalidate();return true}
   dragPage(progress:number){if(this.dragging&&this.turn){this.turn.progress=clamp01(progress);this.invalidate()}}
   endPageDrag(commit:boolean){if(!this.dragging||!this.turn)return null;const index=commit?nextLeaf(this.index,this.turn.direction,leafCount(this.config)):this.index;this.dragging=false;this.invalidate();return index}
   fit(){const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*1.08;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.15,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
