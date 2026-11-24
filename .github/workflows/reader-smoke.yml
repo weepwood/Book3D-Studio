@@ -9,6 +9,7 @@ on:
       - 'src/core/stackGeometry.ts'
       - 'src/core/stackProfile.ts'
       - 'src/core/referenceScene.ts'
+      - 'src/core/readingCamera.ts'
       - 'src/core/paperShading.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
