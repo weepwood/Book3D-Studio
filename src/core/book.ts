@@ -190,7 +190,10 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     }
     return {crossings,pairs,rows:3,samplesPerRow:33}
   }
-  function activePickPoint(){const slot=pages.slots[0];if(!slot?.leaf.visible||!activeTurns[0]||activeTurns[0].progress<.12||activeTurns[0].progress>.88)return null;return slot.leaf.localToWorld(slot.gpu.pickPoint(.75,0))}
+  function activePickPoint(){const turn=activeTurns[0];if(!turn||turn.progress<.12||turn.progress>.88)return null
+    if((turn.span??1)>1&&pages.chunk.visible){const mesh=pages.chunk,g=mesh.geometry,group=g.groups.find(x=>x.materialIndex===(turn.direction===1?4:5));if(!group||!g.index)return null;const pos=g.getAttribute('position'),offset=group.start+Math.floor(group.count/12)*6;const point=new T.Vector3();for(let i=0;i<3;i++)point.add(new T.Vector3().fromBufferAttribute(pos,g.index.getX(offset+i)));return mesh.localToWorld(point.multiplyScalar(1/3))}
+    const slot=pages.slots[0];return slot?.leaf.visible?slot.leaf.localToWorld(slot.gpu.pickPoint(.75,0)):null
+  }
   function readingPickPoint(){const chain=rightLayers[2];if(!chain)return null;const s=sampleChain(chain,.85);return pages.right.localToWorld(new T.Vector3(s.x-pageWidth/2,0,s.z))}
   function groupPickCandidates(direction:1|-1){const right=direction===1,mesh=right?lower:upper,count=right?rightCount:leftCount;if(count<2||!mesh.visible)return [];return edgeTriangleCenters(mesh.geometry).map(v=>mesh.localToWorld(v))}
 

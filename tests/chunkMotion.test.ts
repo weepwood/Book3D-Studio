@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {newChunkMotion,stepChunk,chunkCanCommit,CHUNK_TEXTURE_TIMEOUT,CHUNK_LANDED_FRAMES} from '../src/core/chunkMotion'
+import {newChunkMotion,regrabChunkMotion,stepChunk,chunkCanCommit,CHUNK_TEXTURE_TIMEOUT,CHUNK_LANDED_FRAMES} from '../src/core/chunkMotion'
 import {chunkEndpointWeight,liftChunkChain,createChunkGeometry} from '../src/core/stackGeometry'
 import {makeChain,sampleChain} from '../src/core/pageChain'
 describe('厚块生命周期',()=>{
@@ -24,3 +24,5 @@ it('厚块落地交接尚未提交时改变目标，取消旧目标',()=>{
  expect(m.phase).toBe('landed');expect(m.goal).toBe(1);stepChunk(m,10,1/60,true,false,0,0);expect(m.phase).toBe('release');expect(chunkCanCommit(m,m.progress)).toBe(false)
  for(let i=0;i<300&&!chunkCanCommit(m,m.progress);i++)stepChunk(m,10,1/60,true,false,0,0);expect(m.goal).toBe(0);expect(m.progress).toBe(0);expect(chunkCanCommit(m,m.progress)).toBe(true)
 })
+
+ it('已绘制厚块重抓保留可见性、姿态和已完成的交接，不重置纹理等待',()=>{const m=newChunkMotion(true,0,0,.7);stepChunk(m,10,1/60,true,true,0,0);expect(m.visible).toBe(true);expect(m.progress).toBe(0);m.handoff=false;m.handoffCurl=0;m.handoffFrames=3;const next=regrabChunkMotion(m);expect(next.phase).toBe('gather');expect(next.visible).toBe(true);expect(next.progress).toBe(m.progress);expect(next.lift).toBe(m.lift);expect(next.waitMs).toBe(m.waitMs);expect(next.handoff).toBe(false);expect(next.handoffFrames).toBe(3);stepChunk(next,10,.016,false,true,.2,0);expect(next.visible).toBe(true);expect(next.progress).toBeGreaterThan(0)})
