@@ -65,7 +65,7 @@ export class BookRuntime {
     const [x,v]=springStep(this.open,this.velocity,openingTarget,(now-this.last)/1000)
     const dt=Math.min(.05,Math.max(0,(now-this.last)/1000))
     this.last=now;this.open=this.reduced.matches?openingTarget:x;this.velocity=this.reduced.matches?0:v
-    this.book.setOpening(this.open)
+    this.book.setOpening(this.open>=179.5&&openingTarget===180?180:this.open)
     const target=nextLeaf(0,this.config.pageIndex,leafCount(this.config))
     if(this.config.opening<READ_ANGLE||this.reduced.matches){this.turn=null;this.dragging=false;this.releaseGoal=null;this.index=target}
     else if(this.open>=179.5){
@@ -80,7 +80,7 @@ export class BookRuntime {
       }
     }
     if(this.turn||this.settledIndex!==this.index){this.book.setReading(this.index,this.turn?{direction:this.turn.direction,progress:this.turn.progress,grip:this.turn.grip,velocity:this.turn.velocity}:null);this.settledIndex=this.turn?-1:this.index}
-    this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?'active':'idle';this.host.dataset.pageReady=String(this.open>=179.5)
+    this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(this.open>=179.5)
 
     this.book.root.position.set(this.config.width/200*easeTurn(clamp01(this.open/180)),0,0).applyEuler(this.book.root.rotation)
     this.renderer.render(this.scene,this.camera)
@@ -110,7 +110,7 @@ export class BookRuntime {
   clearPageHover(){if(this.turn?.preview){this.hoverGoal=0;this.turn.preview=false;this.invalidate()}}
   fit(){const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*1.08;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.15,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
   setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
-  pageHit(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||this.open<179.5)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;return {direction,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x}}
+  pageHit(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||this.open<179.5)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=(this.config.width-2*this.config.pageInset)/100;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
   pageSide(x:number,y:number){return this.pageHit(x,y)?.direction??null}
   hitTest(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height)return false;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray.intersectObject(this.book.root,true).length>0}
   capture(){this.renderer.render(this.scene,this.camera);return this.renderer.domElement.toDataURL('image/png')}
