@@ -2,6 +2,7 @@ import * as T from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
+import {createTextureWarmer} from './textureWarm'
 import { bookDimensions } from './geometry'
 import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,type ReadingView,type ReadingBounds} from './readingCamera'
 import type {BookConfig} from './schema'
@@ -14,6 +15,8 @@ import {desiredBatch,orderedProgress,openingLeaves,activeSpan} from './pageWindo
 import {PRESS_SCENE,coverProgress,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 export class BookRuntime {
   private renderer:T.WebGLRenderer
+  private warmedTextures=0
+  private warmTexture=createTextureWarmer<T.Texture>(texture=>{this.renderer.initTexture(texture);this.warmedTextures++})
   private scene=new T.Scene()
   private camera=new T.PerspectiveCamera(35,1,.1,100)
   private controls:OrbitControls
@@ -81,7 +84,7 @@ export class BookRuntime {
     this.scene.add(this.light,this.fill,this.ambient)
     this.floor=new T.Mesh(new T.PlaneGeometry(30,30),new T.ShadowMaterial({opacity:.20}))
     this.floor.rotation.x=-Math.PI/2;this.floor.receiveShadow=true;this.scene.add(this.floor)
-    this.book=createBook(c,this.invalidate);this.book.setReading(this.index,[]);this.scene.add(this.book.root)
+    this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setReading(this.index,[]);this.scene.add(this.book.root)
     this.resize=new ResizeObserver(this.onResize);this.resize.observe(host)
     this.renderer.domElement.addEventListener('pointermove',this.hover)
     this.renderer.domElement.addEventListener('pointerleave',this.leave)
@@ -157,7 +160,7 @@ export class BookRuntime {
     const display=drop.length?drop:active.filter(t=>!t.chunkMotion||t.chunkMotion.visible).map(t=>({direction:t.direction,progress:t.renderProgress,grip:t.grip,velocity:t.velocity,curlAmount:t.curlAmount,grabU:t.grabU,span:t.span,chunkGesture:t.chunkGesture,chunkLift:t.chunkMotion?.lift}))
     if(display.length||this.settledIndex!==this.index){this.book.setReading(this.index,display);this.settledIndex=display.length?-1:this.index}
     this.peakActive=Math.max(this.peakActive,active.filter(a=>!a.preview).length)
-    this.peakChunk=Math.max(this.peakChunk,this.turn?.span??0);this.host.dataset.peakChunkLeaves=String(this.peakChunk);this.host.dataset.chunkLeaves=String(this.turn?.span??0);this.host.dataset.chunkPhase=this.turn?.chunkMotion?.phase??'idle';this.host.dataset.chunkLift=String(this.turn?.chunkMotion?.lift??0);this.host.dataset.chunkLandedFrames=String(this.turn?.chunkMotion?.landedFrames??0);this.host.dataset.openingLeaves=String(drop.length);this.host.dataset.stackGeometry='layered';this.host.dataset.groupDrag=String(this.groupDrag);this.host.dataset.regrab=String(this.regrab);this.host.dataset.pageGpu='chain-texture';this.host.dataset.activeLeaves=String(active.length);this.host.dataset.peakActiveLeaves=String(this.peakActive)
+    this.peakChunk=Math.max(this.peakChunk,this.turn?.span??0);this.host.dataset.peakChunkLeaves=String(this.peakChunk);this.host.dataset.chunkLeaves=String(this.turn?.span??0);this.host.dataset.chunkPhase=this.turn?.chunkMotion?.phase??'idle';this.host.dataset.chunkLift=String(this.turn?.chunkMotion?.lift??0);this.host.dataset.textureWarmCount=String(this.warmedTextures);this.host.dataset.chunkLandedFrames=String(this.turn?.chunkMotion?.landedFrames??0);this.host.dataset.openingLeaves=String(drop.length);this.host.dataset.stackGeometry='layered';this.host.dataset.groupDrag=String(this.groupDrag);this.host.dataset.regrab=String(this.regrab);this.host.dataset.pageGpu='chain-texture';this.host.dataset.activeLeaves=String(active.length);this.host.dataset.peakActiveLeaves=String(this.peakActive)
     this.host.dataset.hoverCurl=String(this.turn?.preview?this.turn.curlAmount:0)
     this.host.dataset.pageProgress=String(this.turn?.progress??0);this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(ready)
 
@@ -178,7 +181,7 @@ export class BookRuntime {
   update(c:BookConfig){
     const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
     const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening;this.config={...c};if(frameChanged)this.readingBounds=null
-    if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
+    if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
     if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c)
   }

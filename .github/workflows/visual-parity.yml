@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'scripts/visual-parity.mjs'
+      - 'src/core/paperShading.ts'
+      - 'src/core/textureWarm.ts'
       - '.github/workflows/visual-parity.yml'
   workflow_dispatch:
 permissions:

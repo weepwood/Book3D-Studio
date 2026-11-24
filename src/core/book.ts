@@ -55,7 +55,7 @@ function bump(){
   for(let i=0;i<128;i+=4){ctx.fillStyle='#a0a0a0';ctx.fillRect(i,0,1,128);ctx.fillStyle='#606060';ctx.fillRect(0,i,128,1)}
   const map=new T.CanvasTexture(el);map.wrapS=map.wrapT=T.RepeatWrapping;map.repeat.set(6,9);return map
 }
-export function createBook(c:BookConfig, invalidate:()=>void){
+export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Texture)=>boolean){
   const root=new T.Group()
   const {w,h,d,t,inset,gutterInset,pageWidth,pageCenter,pageHeight,pageDepth,coverZ}=bookDimensions(c.width,c.height,c.thickness,c.boardThickness,c.pageInset)
   const radius=c.cornerRadius/100
@@ -80,7 +80,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   const pagePivot=new T.Group();root.add(pagePivot)
   const upper=mesh(upperShape.g,pageMaterials,pagePivot,gutterInset+pageWidth/2,0,0)
   upper.name='Read page block'
-  const pages=createPageLayer(pageWidth,pageHeight,c,invalidate)
+  const pages=createPageLayer(pageWidth,pageHeight,c,invalidate,warm)
   root.add(pages.root,pages.right);pagePivot.add(pages.left)
   pages.right.position.set(pageCenter,0,0)
   pages.left.rotation.y=Math.PI;pages.left.position.x=gutterInset+pageWidth/2

@@ -64,3 +64,9 @@ PR #7 c1377fa 的真实采集 artifact 14920141980 已人工检查：展开纸�
 ## V0.6 厚块生命周期
 源 04ud9... chunk phase gather/turn/release/landed、1200ms texture safety、150ms 自动抬升、.65–1落下、12/14 gather rate、10 release lift rate、.55–.95 release falloff、4 landed frames 已核实。独立状态机在 pageTexture 图片加载完成/失败或超时后才分离厚块，支持双向自动、手动聚拢和取消、落地四帧再提交页码，收拢根部通过真实静止层深度曲面插值。抬升为本地单位下的受限位移近似，不复制原版 shader/liveLift 曲线，原版单独 handoffLeaf 叠层及 GPU 纹理上传预热仍未完整复刻。增加状态机/几何测试及双向真实跳转回归。
 厚块抬升方向使用源 (1−2*smooth(progress)) 连续过零，不在中点符号跳变；厚块渲染直接使用状态机 progress（原版方式），落地四帧计数对应实际到达终点后的帧；准备期间取消保持静止网格，避免瞬间分离。
+
+## V0.6 纸面渲染与纹理预热
+原版 3fe65... 源页边 band=.006、edgeLighting=mix(1.4,.7,facingCamera)，装订遮蔽按方向光亮度归一化着色；12s2... 物理页 shadow passes=2、blurMul=.6。适配 Three r174 的实际 lights_fragment_begin 方向光阴影调用，保留原生 PCF、两次确定性纹素偏移采样；采用 UV 雅可比计算页边真实切向，避免直接将屏幕轴当作纸张边缘。原版多 tap poisson/jitter 与完整三色阴影梯度未复制，未证实独立物理透光模型，因此保留现有背面纹理渗色，不新增臆造散射。厚块前后面待解码后 renderer.initTexture，WeakMap 按 texture.version 去重，重绘再预热；只预热实际厚块两面，不做无界全书缓存。新增真实版本诊断与单元/浏览器回归，视觉工作流覆盖材质改动。
+
+## fd7acd3 真实视觉审查
+63 单元、6 浏览器与 capture job 全通过；下载 artifact 14929037629，人工核查九张图：本地闭合/打开/翻页/中间跨页均可见，纸面没有明显 shader 黑屏，但仍显灰且书芯外缘偏薄。原站 late/late-check 实际为封面姿态（The Art of Doing Science and Engineering），Close book 文案不能证明展开，故不作为视觉通过证据。新增本地 WebGL/运行时错误门禁，以及原站公开 Next page/Previous page 与 data-readout=spread 变化检查，额外采集翻页后稳定图。必须人工确认实为展开跨页；不同书籍/相机仍不能做像素级对照。#11 61/61、6/6 已合并至 01eda90。
