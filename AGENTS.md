@@ -44,3 +44,5 @@ PR #14 dcf15b2 四项 CI 均成功。真实 matched-visual artifact 14931978996 
 
 ### #14 原站视觉采集复审
 94889f6 的四项 CI 通过，但 artifact 14933663688 实际截图显示目标封面（页码 116–117→118–119 并不能证明展开）。本机 Edge 原站诊断通过公开按钮 scrollIntoViewIfNeeded 后 DOM click，实际截图 /tmp/book3d-source-debug.png 确认为 Nomad Letters 168–169 展开双页。修复脚本取消依赖动态 carousel 坐标的 pointer 激活，记录点击当时的 aria-label，翻页使用公开按钮 DOM click；仍需检查最终真实截图，不能把捕获成功等同于视觉验收。
+
+fa5e4c1 完整复跑仍复现错位：激活 Nomad Letters，但首页轮播切到 Built to Grow 封面，readout 168–169→170–171 仍不能证明展开。已从公开链接确认固定详情路由 /book/nomad-letters；本机 Edge 单独验证固定路由打开及下一页，截图 /tmp/book3d-fixed-route-open.png、/tmp/book3d-fixed-route-next.png，路由与书名一致。采集改用固定详情路由、精确按钮标签、站点菜单 Current book 身份断言；不依赖轮播首页，不放宽人工视觉门禁。新 CI 必须复查。

@@ -82,3 +82,5 @@ PR #14 dcf15b2 的四项工作流已成功；artifact 14931978996 的真实 v0.6
 
 ### #14 原站采集定位修复
 94889f6 的原站晚期/翻页后截图实际为封面，虽然公开 readout 116–117→118–119。另一次本机 Edge 诊断显示公开按钮在 viewport 下方（y≈925，视口高900），动态 carousel 坐标可能不可靠；scrollIntoViewIfNeeded 后调用同一 DOM 按钮 click，Nomad Letters 168–169 实际展开。将此可靠路径纳入采集脚本并记录激活书名、读者控件和页码；此为证据采集修复，不修改生产引擎，也不证明不同素材的像素级一致。
+
+补充复验：fa5e4c1 在首页完整复跑仍因 carousel 切换而显示 Built to Grow 封面，即使激活标签及页码正确。改为公开固定详情路由 https://stripe.press/book/nomad-letters，检查路由和 Current book 菜单标签；本机 Edge 固定入口实际展开 168–169 并翻至 170–171。需再次审核完整采集流程的截图，自动身份检查不等同于图像识别或视觉验收。
