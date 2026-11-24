@@ -14,7 +14,8 @@ export function surfaceChain(width:number,angle:number,offset=0):Chain{
  // Rebase every layer at its own spine root, so the thickness coordinate
  // is shared exactly by the block, surface and active page.
  const x=positions[0],z=positions[1]
- for(let i=0;i<n;i++){positions[i*2]-=x;positions[i*2+1]-=z;const lo=Math.max(0,i-1),hi=Math.min(n-1,i+1),dx=positions[hi*2]-positions[lo*2],dz=positions[hi*2+1]-positions[lo*2+1],d=Math.hypot(dx,dz)||1;tangents[i*2]=dx/d;tangents[i*2+1]=dz/d}
+ for(let i=0;i<n;i++){positions[i*2]-=x;positions[i*2+1]-=z}
+ for(let i=0;i<n;i++){const lo=Math.max(0,i-1),hi=Math.min(n-1,i+1),dx=positions[hi*2]-positions[lo*2],dz=positions[hi*2+1]-positions[lo*2+1],d=Math.hypot(dx,dz)||1;tangents[i*2]=dx/d;tangents[i*2+1]=dz/d}
  return {positions,tangents,width}
 }
 export function turningChain(width:number,p:number,flex:number,right:Chain,left:Chain):Chain{

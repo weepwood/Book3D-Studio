@@ -69,5 +69,5 @@ export function createGpuPage(width:number,height:number){
     uniforms.ppSpan.value=R.curl.span/R.sourcePageWidth*width*(1+(1-Math.max(0,Math.min(1,grabU)))*1.2)
     uniforms.ppLift.value=progress>.5?-1:1
   }
-  return {attach,depth,texture,update,pickGeometry(){const g=new T.PlaneGeometry(width,height,24,10),uv=g.getAttribute('uv'),p=g.getAttribute('position');for(let i=0;i<p.count;i++){const xyz=rollPoint(current,uv.getX(i),uv.getY(i)-.5,height,pose.amount,pose.grip,pose.grabU,pose.progress);p.setXYZ(i,...xyz)}p.needsUpdate=true;g.computeBoundingSphere();return g},dispose(){texture.dispose();depth.dispose()}}
+  return {attach,depth,texture,update,pickPoint(u:number,v:number){return new T.Vector3(...rollPoint(current,u,v,height,pose.amount,pose.grip,pose.grabU,pose.progress))},pickGeometry(){const g=new T.PlaneGeometry(width,height,24,10),uv=g.getAttribute('uv'),p=g.getAttribute('position');for(let i=0;i<p.count;i++){const xyz=rollPoint(current,uv.getX(i),uv.getY(i)-.5,height,pose.amount,pose.grip,pose.grabU,pose.progress);p.setXYZ(i,...xyz)}p.needsUpdate=true;g.computeBoundingSphere();return g},dispose(){texture.dispose();depth.dispose()}}
 }

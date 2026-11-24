@@ -2,7 +2,7 @@ import * as T from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
-import { springStep, type BookConfig } from './schema'
+import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
 import {curlTarget} from './pageChain'
@@ -33,7 +33,6 @@ export class BookRuntime {
   private peakActive=0
   private last=0
   private open=0
-  private velocity=0
   private index=0
   private turn:TurnState|null=null
   private releaseGoal:number|null=null
@@ -93,7 +92,7 @@ export class BookRuntime {
           t.curlAmount+=(aim-t.curlAmount)*(1-Math.pow(this.hovered?.94:.95,dt*60))
           if(Math.abs(t.curlAmount-aim)<.01){t.curlAmount=aim;if(!this.hovered)this.turn=null}
         }else if(this.dragging){
-          const prev=t.progress;if(this.regrab&&this.brakeElapsed<PRESS_SCENE.brakeMs){this.brakeElapsed+=dt*1000;const k=brakeRetention(this.brakeElapsed);t.velocity*=Math.pow(1-k.damping,dt*60)}t.progress=followDrag(prev,t.dragTarget,dt);t.velocity=dt>0?(t.progress-prev)/dt:0
+          const prev=t.progress;if(this.regrab&&this.brakeElapsed<PRESS_SCENE.brakeMs){this.brakeElapsed+=dt*1000;const k=brakeRetention(this.brakeElapsed);t.velocity*=Math.pow(1-k.damping,dt*60);const drift=clamp01(prev+t.velocity*dt*k.drive);t.progress=followDrag(drift,t.dragTarget,dt*(1-k.drive))}else{t.progress=followDrag(prev,t.dragTarget,dt);t.velocity=dt>0?(t.progress-prev)/dt:0}
           t.renderProgress=followRender(t.renderProgress,t.progress,dt)
           const aim=curlTarget('drag',t.progress,t.grabU,this.config.pageCorner)
           t.curlAmount+=(aim-t.curlAmount)*(1-Math.pow(.96,dt*60))
@@ -129,7 +128,7 @@ export class BookRuntime {
 
     this.book.root.position.set(this.config.width/200*easeTurn(clamp01(this.open/180)),0,0).applyEuler(this.book.root.rotation)
     this.renderer.render(this.scene,this.camera);this.drawing=false
-    if(this.open>=179.5){const rect=this.renderer.domElement.getBoundingClientRect();const mesh=this.book.readingSurfaces[1];const pos=mesh.localToWorld(new T.Vector3((this.config.width-2*this.config.pageInset)/100*.35,0,0)).project(this.camera);this.host.dataset.rightPick=JSON.stringify([rect.left+(pos.x+1)*rect.width/2,rect.top+(1-pos.y)*rect.height/2])}
+    if(this.open>=179.5){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};const mesh=this.book.readingSurfaces[1];this.host.dataset.rightPick=project(mesh.localToWorld(new T.Vector3((this.config.width-2*this.config.pageInset)/100*.35,0,0)));this.host.dataset.groupPick=project(this.book.groupPickPoint(1));this.host.dataset.activePick=this.turn&&!this.turn.preview&&!this.followers.length?project(this.book.activePickPoint()):''}
     if(this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
