@@ -1,0 +1,6 @@
+import {describe,it,expect} from 'vitest'
+import {chunkRowProgress,createChunkGeometry,turningChain,boundLayer} from '../src/core/stackGeometry'
+describe('整块书芯拖动扭转',()=>{
+ it('根部与尾端连续、双向映射和 .42rad 约束',()=>{for(const p of [0,.05,.2,.4,.5,.9,1])for(const u of [0,.5,1]){const a=chunkRowProgress(p,u,1),b=chunkRowProgress(p,u,-1);expect(a+b).toBeCloseTo(1);expect(a).toBeGreaterThanOrEqual(0);expect(a).toBeLessThanOrEqual(p+1e-10);expect((p-a)*Math.PI).toBeLessThanOrEqual(.42+1e-10);if(p===0||p>=.5)expect(a).toBeCloseTo(p)}expect(chunkRowProgress(.2,0,1,-1)).toBeLessThan(chunkRowProgress(.2,1,1,-1))})
+ it('真实厚块不同高度使用不同曲面，UV 和边界有效',()=>{const w=1.5,h=2,p=.25,r=boundLayer(w,.15,.5),l=boundLayer(w,.15,.5,-1),chain=turningChain(w,p,.7,r,l),g=createChunkGeometry(w,h);g.pose(chain,.2,u=>turningChain(w,chunkRowProgress(p,u,1),.7,r,l));const a=g.g.getAttribute('position');let low=Infinity,high=Infinity;for(let i=0;i<a.count;i++){if(a.getY(i)<-.99)low=Math.min(low,a.getX(i));if(a.getY(i)>.99)high=Math.min(high,a.getX(i))}expect(Math.abs(low-high)).toBeGreaterThan(.001);for(const n of ['position','normal','uv'])expect(Array.from(g.g.getAttribute(n).array).every(Number.isFinite)).toBe(true);expect(g.g.boundingSphere!.radius).toBeGreaterThan(1);g.g.dispose()})
+})

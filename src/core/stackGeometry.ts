@@ -41,9 +41,21 @@ export function poseSurface(g:T.BufferGeometry,chain:Chain,flip:boolean){
 
 // Thick moving block: same curve as the visible active leaf, offset along
 // its tangent normal at three depth layers. No per-leaf meshes are allocated.
+export const CHUNK_HEIGHT_SEGMENTS=12
+// The reference's gesture block uses a height-dependent angle with a .42rad
+// maximum lag that fades between progress .04 and .50. Our positive-X leaf
+// basis maps the gesture side into the corresponding absolute page angle.
+export function chunkRowProgress(progress:number,heightFraction:number,direction:1|-1,grip=0){
+ const p=clamp(progress),u=clamp(heightFraction),row=grip<0?1-u:u,n=clamp((p-.04)/.46),smooth=n*n*(3-2*n),fall=row*row*(3-2*row)
+ const lag=Math.min(p*Math.PI*(1-smooth)*fall,.42*fall),q=clamp(p-lag/Math.PI)
+ return direction===1?q:1-q
+}
 export function createChunkGeometry(w:number,h:number){
- const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
- return {g,pose(chain:Chain,depth:number){for(let i=0;i<p.count;i++){const a=sampleChain(chain,original[i*3]/w+.5),off=original[i*3+2]*depth;p.setXYZ(i,a.x-a.tz*off,original[i*3+1],a.z+a.tx*off)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+ const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
+ return {g,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain){
+   const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
+   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),a=sampleChain(rows?.[row]??chain,original[i*3]/w+.5),off=original[i*3+2]*depth;p.setXYZ(i,a.x-a.tz*off,y,a.z+a.tx*off)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
+ }}
 }
 
 // True triangle interior points, rather than analytic midpoints which can
