@@ -16,3 +16,4 @@ V0.4.2 追加：局部悬停 GPU 卷曲、三层书芯偏移曲线采样；待�
 
 V0.5 分支 feat/v0.5-reference-integration：PR #6 已合并（73b20b0），35 单元测试及 Chromium 通过、Pages 成功。P0/P1 集中推进：真实曲面书芯、统一活动页端点、封面/落页时间、重新抓取和边缘成组、原版光照配置、参考站对照脚本。仍需视觉验收，不宣称 1:1，详见 docs/stripe-press-parity.md。
 视觉证据：scripts/visual-parity.mjs 与 .github/workflows/visual-parity.yml；外部站点加载失败须记录，不可声称已验证。
+V0.5 追加：独立 openingLeaves 展示状态与逐页落下，实际指针重抓专项测试。原版参考证据与本地适配区别不可抹去。

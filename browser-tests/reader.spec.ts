@@ -10,6 +10,7 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
  await expect(host).toHaveAttribute('data-page-gpu','chain-texture')
  await expect(host).toHaveAttribute('data-stack-geometry','layered')
+ await expect(host).toHaveAttribute('data-opening-leaves','0')
  const pick=JSON.parse((await host.getAttribute('data-right-pick'))!) as [number,number]
  await page.mouse.move(...pick)
  await expect(host).toHaveAttribute('data-page-turn','preview')
@@ -37,4 +38,23 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  await page.getByRole('button',{name:'闭合书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','false')
  expect(errors).toEqual([])
+})
+
+
+test('真实活动页重新抓取与取消',async({page},testInfo)=>{
+ await page.goto('/')
+ const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
+ await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ await page.getByRole('button',{name:'下一页',exact:true}).click()
+ // The projected point comes from the same chain used for the GPU surface.
+ await expect.poll(async()=>Boolean(await host.getAttribute('data-active-pick')),{timeout:15000}).toBe(true)
+ const point=JSON.parse((await host.getAttribute('data-active-pick'))!) as [number,number]
+ await page.mouse.move(...point);await page.mouse.down()
+ await expect(host).toHaveAttribute('data-regrab','true',{timeout:5000})
+ await page.mouse.move(point[0]+24,point[1],{steps:3})
+ await page.mouse.up()
+ await expect(host).toHaveAttribute('data-regrab','false')
+ await expect(host).toHaveAttribute('data-page-turn','idle',{timeout:55000})
+ await page.screenshot({path:testInfo.outputPath('regrab-settled.png')})
 })

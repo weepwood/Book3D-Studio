@@ -26,3 +26,11 @@ export function desiredBatch(index:number,target:number,count:number,direction:1
 export function gravityDrop(elapsedMs:number,slot:number,count:number){
   const p=clamp((elapsedMs-R.gravityDelayMs*(count-slot))/R.gravityDropMs);return p*p*(3-2*p)
 }
+
+// The opening sequence is a separate presentation state, never a page-index
+// mutation. Reference gravityDrop timing is reused for each live leaf.
+export function openingLeaves(index:number,count:number,elapsedMs:number):ActiveLeaf[]{
+ const direction=index<count?1:-1,available=direction===1?count-index:index,n=Math.min(LIVE_LEAF_LIMIT,available)
+ if(n<=0||elapsedMs>=n*R.gravityDelayMs+R.gravityDropMs)return []
+ return Array.from({length:n},(_,slot)=>({direction,progress:.5*(1-gravityDrop(elapsedMs,slot,n)),grip:0,curlAmount:0,grabU:1}))
+}
