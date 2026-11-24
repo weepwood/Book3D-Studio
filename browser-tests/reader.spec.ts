@@ -43,8 +43,8 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
 
 test('真实活动页重新抓取与取消',async({page},testInfo)=>{
  await page.goto('/')
- await page.getByRole('button',{name:'▱ 内页'}).click().catch(async()=>{await page.getByRole('button',{name:/内页/,exact:false}).first().click()})
- const duration=page.getByRole('slider').nth(2);await duration.fill('2').catch(()=>{})
+ await page.getByRole('button',{name:/内页/}).first().click()
+ const duration=page.getByRole('spinbutton',{name:'翻页响应 数值'});await duration.fill('2');await duration.press('Enter')
  await page.getByRole('button',{name:/模型/}).click()
  const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
@@ -61,6 +61,7 @@ test('真实活动页重新抓取与取消',async({page},testInfo)=>{
  await page.mouse.up()
  await expect(host).toHaveAttribute('data-regrab','false')
  await expect(host).toHaveAttribute('data-page-turn','idle',{timeout:55000})
+ await expect(host).toHaveAttribute('data-page-index','0')
  await page.screenshot({path:testInfo.outputPath('regrab-settled.png')})
 })
 
@@ -84,12 +85,12 @@ test('真实书芯边缘成组拾取与释放',async({page},testInfo)=>{
 test('超六张整块书芯跳转',async({page},testInfo)=>{
  await page.goto('/')
  await page.getByRole('button',{name:/内页/}).first().click()
- await page.getByRole('slider').first().fill('40')
+ const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
  await page.getByRole('button',{name:/模型/}).click()
  const host=page.locator('.canvas-host');await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
  await page.getByRole('button',{name:'下一页',exact:true}).evaluate((b:HTMLButtonElement)=>{for(let i=0;i<12;i++)b.click()})
  await expect(host).toHaveAttribute('data-page-target','12')
- await expect.poll(async()=>Number(await host.getAttribute('data-chunk-leaves')),{timeout:15000}).toBe(12)
- await page.screenshot({path:testInfo.outputPath('large-chunk.png')})
+ await expect.poll(async()=>Number(await host.getAttribute('data-peak-chunk-leaves')),{timeout:15000}).toBe(12)
+ if(Number(await host.getAttribute('data-chunk-leaves'))===12)await page.screenshot({path:testInfo.outputPath('large-chunk.png')})
  await expect(host).toHaveAttribute('data-page-index','12',{timeout:55000})
 })
