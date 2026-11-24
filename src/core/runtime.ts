@@ -3,11 +3,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
 import { bookDimensions } from './geometry'
-import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,type ReadingView,type ReadingBounds} from './readingCamera'
+import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,type ReadingView,type ReadingBounds} from './readingCamera'
 import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newTurn,stepTurn,releaseCommit,followDrag,followRender,type TurnState} from './pagePhysics'
 import {curlTarget} from './pageChain'
+import {referenceDragProgress} from './pressReference'
 import {desiredBatch,orderedProgress,openingLeaves,activeSpan} from './pageWindow'
 import {PRESS_SCENE,coverProgress,brakeRetention,chunkAutoProgress,chunkRelease,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 export class BookRuntime {
@@ -33,6 +34,10 @@ export class BookRuntime {
   private readingVelocity:ReadingView={zoom:0,x:0,y:0}
   private readingBounds:ReadingBounds|null=null
   private cameraMoving=false
+  private touchPoints=new Map<number,{x:number;y:number}>()
+  private touchMode:'idle'|'pending'|'page'|'pan'|'pinch'|'hold'='idle'
+  private touchStart:{x:number;y:number;time:number;view:ReadingView;lastX:number;velocityX:number;direction?:1|-1;progress?:number;distance?:number}|null=null
+  private touchPinch:{x:number;y:number;distance:number;view:ReadingView}|null=null
   private cameraPan:{id:number;x:number;y:number;start:ReadingView}|null=null
   private groupProbeKey=''
   private groupProbe:string=''
@@ -195,7 +200,7 @@ export class BookRuntime {
   }
   // Hover only changes local curl, leaving the spine angle at its endpoint.
   previewPage(x:number,y:number){
-    if(this.config.opening<READ_ANGLE||this.open<179.5||this.openingActive||this.reduced.matches||this.cameraMoving||this.cameraPan||this.dragging||this.index!==this.config.pageIndex||this.config.pageHover<=0||this.turn&&!this.turn.preview){this.clearPageHover();return}
+    if(this.config.opening<READ_ANGLE||this.open<179.5||this.openingActive||this.reduced.matches||this.cameraMoving||this.cameraPan||this.touchMode!=='idle'||this.dragging||this.index!==this.config.pageIndex||this.config.pageHover<=0||this.turn&&!this.turn.preview){this.clearPageHover();return}
     const edgeRay=this.makeRay(x,y);if(edgeRay&&this.findGroup(x,y)){this.clearPageHover();return}
     const hit=this.pageHit(x,y)
     if(!hit||nextLeaf(this.index,hit.direction,leafCount(this.config))===this.index){this.clearPageHover();return}
@@ -206,7 +211,7 @@ export class BookRuntime {
   fit(){this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.04,distance);this.controls.target.set(0,0,0);this.controls.update();this.invalidate()}
   setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
   private resetReadingCamera(){
-    this.readingView=initialReadingView();this.readingTarget=initialReadingView();this.readingVelocity={zoom:0,x:0,y:0};this.readingBounds=null;this.cameraMoving=false
+    this.readingView=initialReadingView();this.readingTarget=initialReadingView();this.readingVelocity={zoom:0,x:0,y:0};this.readingBounds=null;this.cameraMoving=false;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
     this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix()
   }
   private updateReadingCamera(dt:number,ready:boolean){
@@ -214,19 +219,19 @@ export class BookRuntime {
     const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return
     if(!this.readingBounds){
       this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.camera.updateMatrixWorld(true);this.book.root.updateMatrixWorld(true)
-      let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity
+      let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity,pageWidth=0
       // Use both visible page meshes, not the moving GPU geometry, for
       // the stable reading bounds. Recompute on resize and model/view changes.
-      for(const m of this.book.readingSurfaces){m.geometry.computeBoundingBox();const b=m.geometry.boundingBox!;for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]){const p=m.localToWorld(new T.Vector3(x,y,z)).project(this.camera);left=Math.min(left,p.x*w/2);right=Math.max(right,p.x*w/2);top=Math.min(top,-p.y*h/2);bottom=Math.max(bottom,-p.y*h/2)}}
+      for(const m of this.book.readingSurfaces){m.geometry.computeBoundingBox();const b=m.geometry.boundingBox!;let lo=Infinity,hi=-Infinity;for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]){const p=m.localToWorld(new T.Vector3(x,y,z)).project(this.camera);lo=Math.min(lo,p.x*w/2);hi=Math.max(hi,p.x*w/2);top=Math.min(top,-p.y*h/2);bottom=Math.max(bottom,-p.y*h/2)}left=Math.min(left,lo);right=Math.max(right,hi);pageWidth=Math.max(pageWidth,hi-lo)}
       if(!Number.isFinite(left))return
-      this.readingBounds={width:w,height:h,left,right,top,bottom};this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
+      this.readingBounds={width:w,height:h,left,right,top,bottom,pageWidth};this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
     }
-    if(!this.cameraPan){if(this.reduced.matches){this.readingView={...this.readingTarget};this.cameraMoving=false}else this.cameraMoving=!springReading(this.readingView,this.readingVelocity,this.readingTarget,dt)}
+    if(!this.cameraPan&&this.touchMode!=='pinch'&&this.touchMode!=='pan'&&this.touchMode!=='hold'){if(this.reduced.matches){this.readingView={...this.readingTarget};this.cameraMoving=false}else this.cameraMoving=!springReading(this.readingView,this.readingVelocity,this.readingTarget,dt)}
     this.camera.zoom=this.readingView.zoom
     if(this.readingView.x||this.readingView.y)this.camera.setViewOffset(w,h,-this.readingView.x,-this.readingView.y,w,h)
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
-    this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
+    this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
   }
   private readWheel=(e:WheelEvent)=>{
     if(this.config.opening<READ_ANGLE||this.openingActive||!this.readingBounds||this.dragging)return
@@ -245,11 +250,72 @@ export class BookRuntime {
   private readPanMove=(e:PointerEvent)=>{
     const p=this.cameraPan,b=this.readingBounds;if(!p||p.id!==e.pointerId||!b)return
     e.preventDefault();e.stopPropagation();const lim=panLimits(b,p.start.zoom)
-    this.readingView={zoom:p.start.zoom,x:rubber(p.start.x+e.clientX-p.x,lim.minX,lim.maxX,b.width),y:rubber(p.start.y+e.clientY-p.y,lim.minY,lim.maxY,b.height)};this.invalidate()
+    this.readingView={zoom:p.start.zoom,x:rubber(p.start.x+e.clientX-p.x,lim.minX,lim.maxX,b.width,PRESS_SCENE.panRubber),y:rubber(p.start.y+e.clientY-p.y,lim.minY,lim.maxY,b.height,PRESS_SCENE.panRubber)};this.invalidate()
   }
   private readPanEnd=(e:PointerEvent)=>{
     const p=this.cameraPan;if(!p||p.id!==e.pointerId)return
     e.stopPropagation();this.cameraPan=null;if(this.readingBounds)this.readingTarget=clampReadingView(this.readingView,this.readingBounds);this.invalidate()
+  }
+  // Touch gestures own the entire sequence. React's mouse drag state is
+  // never populated for reading touch pointers.
+  private beginPinch(){
+    const [a,b]=this.touchPoints.values();if(!a||!b)return
+    const rect=this.host.getBoundingClientRect()
+    this.touchPinch={x:(a.x+b.x)/2-rect.left-rect.width/2,y:(a.y+b.y)/2-rect.top-rect.height/2,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),view:{...this.readingView}}
+    this.touchMode='pinch';this.cameraMoving=false;this.readingVelocity={zoom:0,x:0,y:0};this.readingTarget={...this.readingView}
+  }
+  readTouchDown(id:number,x:number,y:number,time:number){
+    if(this.config.opening<READ_ANGLE||!this.readingBounds||this.openingActive)return null
+    this.touchPoints.set(id,{x,y});this.clearPageHover()
+    let index:number|null=null
+    if(this.touchPoints.size>=2){
+      if(this.touchMode==='page')index=this.endPageDrag(false)
+      this.touchStart=null;this.beginPinch()
+    }else{this.touchMode='pending';this.touchStart={x,y,time,view:{...this.readingView},lastX:x,velocityX:0}}
+    this.invalidate();return index
+  }
+  readTouchMove(id:number,x:number,y:number,time:number){
+    if(!this.touchPoints.has(id))return
+    this.touchPoints.set(id,{x,y});const bounds=this.readingBounds;if(!bounds)return
+    if(this.touchMode==='pinch'){
+      const p=this.touchPinch,[a,b]=this.touchPoints.values();if(!p||!a||!b)return
+      const rect=this.host.getBoundingClientRect(),center={x:(a.x+b.x)/2-rect.left-rect.width/2,y:(a.y+b.y)/2-rect.top-rect.height/2}
+      this.readingView=pinchReading(p.view,Math.hypot(a.x-b.x,a.y-b.y)/p.distance,p,center,bounds);this.invalidate();return
+    }
+    const p=this.touchStart;if(!p||this.touchMode==='hold')return
+    const dx=x-p.x,dy=y-p.y
+    if(this.touchMode==='pending'){
+      if(Math.hypot(dx,dy)<PRESS_SCENE.readDragSlopPx)return
+      const direction:1|-1=dx<0?1:-1
+      const hit=Math.abs(dx)>=Math.abs(dy)&&touchPageAllowed(bounds,this.readingView,direction)?this.pageHit(p.x,p.y,true):null
+      if(hit&&hit.direction===direction&&this.beginPageDrag(hit.direction,hit.grip,hit.edge,hit.group,hit.regrab)){
+        this.touchMode='page';p.direction=hit.direction;p.progress=hit.progress
+      }else{this.touchMode='pan';p.view={...this.readingView};this.readingTarget={...this.readingView};this.cameraMoving=false;this.readingVelocity={zoom:0,x:0,y:0}}
+    }
+    if(this.touchMode==='page'&&p.direction){
+      p.distance=-dx*p.direction;this.dragPage(clamp01((p.progress??0)+referenceDragProgress(p.distance,bounds.width,true)))
+    }else if(this.touchMode==='pan'){
+      const lim=panLimits(bounds,p.view.zoom)
+      this.readingView={zoom:p.view.zoom,x:rubber(p.view.x+dx,lim.minX,lim.maxX,bounds.width,PRESS_SCENE.panRubber),y:rubber(p.view.y+dy,lim.minY,lim.maxY,bounds.height,PRESS_SCENE.panRubber)}
+      p.velocityX=.65*p.velocityX+.35*(x-p.lastX)/Math.max(.008,(time-p.time)/1000);p.lastX=x;p.time=time
+    }
+    this.invalidate()
+  }
+  readTouchEnd(id:number,time:number,cancel=false){
+    if(!this.touchPoints.delete(id))return null
+    let index:number|null=null
+    const mode=this.touchMode,p=this.touchStart,b=this.readingBounds
+    if(mode==='pinch'||mode==='hold'){
+      if(this.touchPoints.size>=2)this.beginPinch()
+      else if(this.touchPoints.size===1){this.touchMode='hold';this.touchPinch=null}
+      else {this.touchMode='idle';this.touchPinch=null;if(b)this.readingTarget=cancel?clampReadingView(this.readingView,b):snapReadingView(this.readingView,b)}
+    }else{
+      if(mode==='page')index=this.endPageDrag(cancel?false:null,p?.distance??0)
+      else if(mode==='pending'&&!cancel&&p){const hit=this.pageHit(p.x,p.y);if(hit)index=nextLeaf(this.config.pageIndex,hit.direction,leafCount(this.config))}
+      else if(mode==='pan'&&b)this.readingTarget=cancel?clampReadingView(this.readingView,b):snapReadingView(this.readingView,b,p&&time-p.time<120?p.velocityX:0)
+      this.touchMode='idle';this.touchStart=null
+    }
+    this.invalidate();return index
   }
   private makeRay(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||x<b.left||x>b.right||y<b.top||y>b.bottom)return null;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray}
   private findGroup(x:number,y:number){for(const [dx,dy] of [[0,0],[-3,0],[3,0],[0,-3],[0,3],[-6,0],[6,0],[0,-6],[0,6]]){const ray=this.makeRay(x+dx,y+dy);const hit=ray&&this.book.pickGroup(ray);if(hit)return hit}return null}

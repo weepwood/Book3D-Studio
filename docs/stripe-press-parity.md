@@ -54,3 +54,6 @@ PR #7 c1377fa 的真实采集 artifact 14920141980 已人工检查：展开纸�
 
 ## V0.6 阅读相机独立专项
 已核实 04ud9... 的 rH 阅读边界、zoomRef/panRef、rA 橡皮筋及积分 spring：源刚度140、阻尼比.75、zoom .5–2、rubber .35。新增独立 readingCamera.ts 与真实预览接入：以默认构图为1倍，滚轮指针锚点缩放、Shift滚轮/横向滚动及中键或 Alt+左键平移、实际纸面投影边界、弹簧回弹、减少动态效果支持、复位与翻页回归。此为编辑器适配，不等同原站移动端双指、横拖触发页边翻页、单页 snap、精确 fitZoom 和完整相机轨道；中键/Alt 是为避免现有翻页冲突的独立手势决定。
+
+## V0.6 触摸阅读专项
+源 04ud9... controller 的 pending/pan/page/pinch 状态、8px slop、6px 边界、panRubber=.28、snapLookahead=.18 已核实。独立 Pointer Events 状态机接管阅读触摸，双指中点锚定缩放、第二指取消在途页拖动、剩余一指 hold 防误翻页，单指方向/边界决定翻页或平移，释放时按投影宽度和速度吸附；保留现有鼠标交互。单页 snap 使用当前模型投影宽度适配，不是原站精确 fitZoom；新增计算回归及 Chromium CDP 多触点真实输入测试，未验证真实 iOS/Android 硬件。

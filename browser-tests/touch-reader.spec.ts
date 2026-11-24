@@ -1,0 +1,32 @@
+import {test,expect} from '@playwright/test'
+test.use({hasTouch:true})
+test('双指缩放接管、释放后单页吸附且不误翻页',async({page},testInfo)=>{
+ await page.goto('/')
+ const host=page.locator('.canvas-host');await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000})
+ const b=(await host.boundingBox())!,x=b.x+b.width/2,y=b.y+b.height/2
+ const cdp=await page.context().newCDPSession(page)
+ const send=async(type:'touchStart'|'touchMove'|'touchEnd'|'touchCancel',touchPoints:{x:number;y:number;id:number}[])=>{await cdp.send('Input.dispatchTouchEvent',{type,touchPoints})}
+ await send('touchStart',[{x:x-30,y,id:1}])
+ await send('touchStart',[{x:x-30,y,id:1},{x:x+30,y,id:2}])
+ await expect(host).toHaveAttribute('data-touch-mode','pinch')
+ await send('touchMove',[{x:x-80,y,id:1},{x:x+80,y,id:2}])
+ await expect.poll(async()=>Number(await host.getAttribute('data-read-zoom'))).toBeGreaterThan(1.5)
+ await send('touchEnd',[{x:x-80,y,id:1}])
+ await expect(host).toHaveAttribute('data-touch-mode','hold')
+ await send('touchEnd',[])
+ await expect(host).toHaveAttribute('data-touch-mode','idle')
+ await expect(host).toHaveAttribute('data-read-camera-moving','false',{timeout:20000})
+ expect(Number(await host.getAttribute('data-read-zoom'))).toBeLessThanOrEqual(2)
+ await expect(host).toHaveAttribute('data-page-index','0')
+ await page.screenshot({path:testInfo.outputPath('touch-pinch-settled.png')})
+ await page.getByRole('button',{name:'重置视角'}).click()
+ await expect(host).toHaveAttribute('data-read-zoom','1.0000')
+ const pick=JSON.parse((await host.getAttribute('data-right-pick'))!) as [number,number]
+ await send('touchStart',[{x:pick[0],y:pick[1],id:1}])
+ await send('touchMove',[{x:pick[0]-Math.min(90,b.width*.2),y:pick[1],id:1}])
+ await expect(host).toHaveAttribute('data-touch-mode','page')
+ await send('touchEnd',[])
+ await expect.poll(async()=>Number(await host.getAttribute('data-page-index')),{timeout:55000}).toBeGreaterThan(0)
+ await cdp.detach()
+})
