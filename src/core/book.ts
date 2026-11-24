@@ -2,6 +2,7 @@ import * as T from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { BookConfig } from './schema'
 import { bookDimensions, openingPose, skinnedBoard, boardGeometry } from './geometry'
+import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
 const texture = (canvas: HTMLCanvasElement) => {
   const t = new T.CanvasTexture(canvas)
   t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4
@@ -67,12 +68,15 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   const back=mesh(boardGeometry(w,h,t,radius),[board,board,board,board,inside,rear],root,-w/2,0,-coverZ)
   back.name='Back cover'
   const pageMaterials=[edgeV,edgeV,edgeH,edgeH,inside,inside]
-  const half=pageDepth/2
-  const lower=mesh(new T.BoxGeometry(pageWidth,pageHeight,half),pageMaterials,root,0,0,-half/2)
-  lower.name='Rear page block'
-  const pagePivot=new T.Group();pagePivot.position.x=-w/2+inset;root.add(pagePivot)
-  const upper=mesh(new T.BoxGeometry(pageWidth,pageHeight,half),pageMaterials,pagePivot,pageWidth/2,0,half/2)
-  upper.name='Front page block'
+  const lower=mesh(new T.BoxGeometry(pageWidth,pageHeight,1),pageMaterials,root,0,0,0)
+  lower.name='Unread page block'
+  const pagePivot=new T.Group();root.add(pagePivot)
+  const upper=mesh(new T.BoxGeometry(pageWidth,pageHeight,1),pageMaterials,pagePivot,inset+pageWidth/2,0,0)
+  upper.name='Read page block'
+  const pages=createPageLayer(pageWidth,pageHeight,c,invalidate)
+  root.add(pages.root,pages.right);pagePivot.add(pages.left)
+  pages.right.position.set(0,0,0)
+  pages.left.rotation.y=Math.PI;pages.left.position.x=inset+pageWidth/2
   const spineWidth=Math.min(.075,Math.max(.027,inset*1.4))
   const spine=mesh(new RoundedBoxGeometry(spineWidth,h,d,4,c.spineStyle==='rounded'?Math.min(spineWidth*.49,d*.24):.002),[board,spineFace,board,board,board,board],root,-w/2+spineWidth*.42,0,0)
   spine.name='Spine'
@@ -81,17 +85,34 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   rig.mesh.name='Front cover';rig.mesh.castShadow=true;rig.mesh.receiveShadow=true;hinge.add(rig.mesh)
   let last=-1
   let current=c
+  let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurn:{direction:1|-1;progress:number}|null=null
+  const refreshPages=()=>{
+    const count=leafCount(current),p=activeTurn?.progress??0,shift=activeTurn?activeTurn.direction*p:0
+    const read=Math.max(0,Math.min(count,readingIndex+shift)),leftDepth=pageDepth*read/count,rightDepth=pageDepth-leftDepth
+    const base=-coverZ+t/2
+    lower.visible=rightDepth>.0001;lower.scale.z=Math.max(.0001,rightDepth);lower.position.z=base+rightDepth/2
+    upper.visible=leftDepth>.0001;upper.scale.z=Math.max(.0001,leftDepth);upper.position.z=-t/2-leftDepth/2
+    pages.right.position.z=base+rightDepth+.002
+    pages.left.position.z=-t/2-leftDepth-.002
+    pages.pose(readingIndex,count,activeTurn,current.pageCurl)
+    const turnP=activeTurn?(activeTurn.direction===1?p:1-p):0
+    pages.leaf.position.set(-w/2+inset*(1-2*turnP),0,base+rightDepth*(1-turnP)+leftDepth*turnP+.006)
+  }
+  const setReading=(index:number,turn:{direction:1|-1;progress:number}|null)=>{readingIndex=Math.min(leafCount(current),Math.max(0,index));activeTurn=turn;refreshPages()}
   const setOpening=(deg:number)=>{
     if(deg===last)return
     last=deg
     const pose=openingPose(deg,current.coverFlex,current.pageCoupling)
-    hinge.rotation.y=pose.hinge;pagePivot.rotation.y=pose.page
+    hinge.rotation.y=pose.hinge
+    const flatten=easeTurn(clamp01((deg-85)/95));hinge.position.z=coverZ*(1-2*flatten)
+    pagePivot.position.copy(hinge.position);pagePivot.rotation.y=pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15
+    spine.scale.z=1-(1-t/d)*flatten;spine.position.z=-coverZ*flatten
     rig.bones.forEach((bone,i)=>{bone.rotation.y=i===0?0:pose.bone})
     root.updateMatrixWorld(true);rig.mesh.computeBoundingSphere();rig.mesh.computeBoundingBox()
   }
-  setOpening(0)
+  setOpening(0);refreshPages()
   const updateAppearance=(next:BookConfig)=>{
-    const previous=current;current=next
+    const previous=current;current=next;pages.update(next)
     if(previous.coverFlex!==next.coverFlex||previous.pageCoupling!==next.pageCoupling){const angle=last;last=-1;setOpening(angle)}
     const keys=['coverColor','inkColor','title','subtitle','author','finish'] as const
     const common=keys.some(k=>previous[k]!==next[k])
@@ -103,7 +124,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     board.color.set(next.coverColor);for(const m of [board,front,rear,spineFace])m.roughness=next.roughness
     if(previous.paperColor!==next.paperColor){inside.color.set(next.paperColor);for(const [mat,vertical] of [[edgeV,true],[edgeH,false]] as const){mat.map?.dispose();mat.map=paper(next.paperColor,vertical);mat.needsUpdate=true}}
   }
-  return {root,hinge,setOpening,updateAppearance,dispose:()=>{rig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,setOpening,setReading,updateAppearance,dispose:()=>{rig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()
