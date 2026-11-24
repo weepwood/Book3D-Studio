@@ -8,3 +8,5 @@ describe('GPU 链纹理及活动页窗口',()=>{
  it('先行页落地后后续页的起止厚度不跳变',()=>{for(const d of [-1,1] as const){const before=batchLayout(5,10,1,d,3),after=batchLayout(5+d,10,1,d,2);const a=leafDepths(before,d,1),b=leafDepths(after,d,0);expect(a.left).toBeCloseTo(b.left);expect(a.right).toBeCloseTo(b.right)}})
  it('邻页角度顺序、目标窗口和落页时间',()=>{expect(orderedProgress(.4,.6)).toBeLessThan(.4);expect(orderedProgress(1,1)).toBe(1);expect(desiredBatch(0,20,20,1)).toBe(6);expect(desiredBatch(3,0,10,-1)).toBe(3);expect(gravityDrop(0,0,6)).toBe(0);expect(gravityDrop(700,0,6)).toBe(1)})
 })
+
+it('实际拾取代理按姿态刷新且复用网格与材质',()=>{const g=createGpuPage(1.5,2);const a=g.pickMesh();const before=a.geometry.getAttribute('position').getZ(48);g.update(.3,.7,1,.2,1);const b=g.pickMesh();expect(b).toBe(a);expect(b.geometry.getAttribute('position').getZ(48)).not.toBe(before);expect(g.pickMesh()).toBe(a);g.dispose()})

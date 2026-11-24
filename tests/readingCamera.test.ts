@@ -15,3 +15,5 @@ it('短视口自动避开不对称工具栏占用的真实安全区',()=>{
  expect(f.bounds.bottom+raw.height/2).toBeLessThanOrEqual(raw.height-chrome.bottom)
  expect((f.bounds.top+f.bounds.bottom)/2).toBeCloseTo(-21)
 })
+
+it('放大与缩小后的纵向平移边界仍避让工具栏',()=>{const f=fitReadingBounds({width:800,height:500,left:-350,right:350,top:-220,bottom:220},12,48,{top:45,bottom:90}),b=f.bounds;const z=2,p=panLimits(b,z);expect(b.bottom*z+p.minY).toBeCloseTo(250-90);expect(b.top*z+p.maxY).toBeCloseTo(-250+45);const small=clampReadingView({zoom:.5,x:0,y:999},b);expect((b.top+b.bottom)*.5/2+small.y).toBeCloseTo((45-90)/2)})
