@@ -3,7 +3,9 @@ import type {BookConfig} from './schema'
 import {clamp} from './pagePhysics'
 import {makeChain,rollPoint} from './pageChain'
 import {createGpuPage} from './pageGpu'
-import type {ActiveLeaf} from './pageWindow'
+import {activeSpan,type ActiveLeaf} from './pageWindow'
+import {createChunkGeometry} from './stackGeometry'
+import {PRESS_SCENE} from './referenceScene'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -43,7 +45,7 @@ const passages=[
 ]
 function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void){
   const canvas=document.createElement('canvas');canvas.width=640;canvas.height=Math.round(640*c.height/c.width)
-  const ctx=canvas.getContext('2d')!;ctx.fillStyle=c.paperColor;ctx.fillRect(0,0,canvas.width,canvas.height)
+  const ctx=canvas.getContext('2d')!;ctx.fillStyle=index<0?c.coverColor:c.paperColor;ctx.fillRect(0,0,canvas.width,canvas.height)
   const w=canvas.width,h=canvas.height
   if(index>=0&&index<c.pageCount){
     const [chapter,title,text]=passages[Math.floor(index/2)%passages.length]
@@ -70,43 +72,48 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
 }
 export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void){
   let config=c
-  const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h,48,1),new T.MeshStandardMaterial({roughness:.94})),right=new T.Mesh(new T.PlaneGeometry(w,h,48,1),new T.MeshStandardMaterial({roughness:.94}))
-  const slots:Array<{leaf:T.Group;front:T.MeshStandardMaterial;back:T.MeshStandardMaterial;gpu:ReturnType<typeof createGpuPage>}>=[]
+  const paperMat=(side:T.Side=T.FrontSide)=>new T.MeshPhongMaterial({side,shininess:PRESS_SCENE.paper.shininess,reflectivity:PRESS_SCENE.paper.reflectivity,specular:new T.Color(...PRESS_SCENE.paper.specular).multiplyScalar(PRESS_SCENE.paper.reflectivity)})
+  const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat()),right=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat())
+  const slots:Array<{leaf:T.Group;front:T.MeshPhongMaterial;back:T.MeshPhongMaterial;gpu:ReturnType<typeof createGpuPage>;fm:T.Mesh;bm:T.Mesh}>=[]
   left.name='Reading page left';right.name='Reading page right'
   for(const mesh of [left,right]){mesh.castShadow=true;mesh.receiveShadow=true}
   function slot(i:number){
     if(slots[i])return slots[i]
     const geometry=createCurlGeometry(w,h),gpu=createGpuPage(w,h)
-    const front=new T.MeshStandardMaterial({roughness:.94,side:T.FrontSide}),back=new T.MeshStandardMaterial({roughness:.94,side:T.BackSide})
+    const front=paperMat(T.FrontSide),back=paperMat(T.BackSide)
     gpu.attach(front);gpu.attach(back)
     const leaf=new T.Group(),fm=new T.Mesh(geometry,front),bm=new T.Mesh(geometry,back)
     fm.name=bm.name='Turning page';fm.castShadow=true;fm.receiveShadow=bm.receiveShadow=true
     fm.customDepthMaterial=gpu.depth;fm.frustumCulled=bm.frustumCulled=false
     leaf.add(fm,bm);root.add(leaf);leaf.visible=false
-    const value={leaf,front,back,gpu};slots.push(value);return value
+    const value={leaf,front,back,gpu,fm,bm};slots.push(value);return value
   }
-  const keys=new Map<T.MeshStandardMaterial,string>()
-  function assign(mat:T.MeshStandardMaterial,index:number,flip=false){
+  const chunkShape=createChunkGeometry(w,h),chunkFront=paperMat(),chunkBack=paperMat(),chunkEdge=paperMat();chunkEdge.color.set(c.paperColor)
+  const chunk=new T.Mesh(chunkShape.g,[chunkEdge,chunkEdge,chunkEdge,chunkEdge,chunkFront,chunkBack]);chunk.name='Turning page block';chunk.castShadow=chunk.receiveShadow=true;chunk.visible=false;root.add(chunk)
+  const keys=new Map<T.MeshPhongMaterial,string>()
+  function assign(mat:T.MeshPhongMaterial,index:number,flip=false){
     const key=index+':'+flip
     if(keys.get(mat)===key)return
     if(mat.map){mat.map.userData.disposed=true;mat.map.dispose()}
     mat.map=pageTexture(config,index,flip,invalidate);mat.needsUpdate=true;keys.set(mat,key)
   }
   function update(next:BookConfig){
-    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed)keys.clear()
-    config=next
+    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor)keys.clear()
+    config=next;chunkEdge.color.set(next.paperColor)
   }
   function pose(index:number,count:number,active:ActiveLeaf[],curl:number){
-    const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*active.length,count)
+    const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)
     assign(right.material,direction===1?next.right:faces.right)
+    const block=(active[0]?.span??1)>1;chunk.visible=block
+    if(block){const n=active[0].span!,lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1)}
     active.forEach((a,i)=>{
       const s=slot(i),moving=turnFaces(index+direction*i,direction)
       assign(s.front,moving.front);assign(s.back,moving.back,true)
       s.gpu.update(direction===1?a.progress:1-a.progress,curl,a.curlAmount??0,a.grip??0,a.grabU??1)
-      s.leaf.visible=true
+      s.leaf.visible=!block
     })
     for(let i=active.length;i<slots.length;i++)slots[i].leaf.visible=false
   }
-  return {root,left,right,slots,update,pose,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
 }

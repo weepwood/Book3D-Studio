@@ -38,3 +38,10 @@ export function poseSurface(g:T.BufferGeometry,chain:Chain,flip:boolean){
  for(let i=0;i<p.count;i++){const s=sampleChain(chain,flip?1-uv.getX(i):uv.getX(i));p.setXYZ(i,flip?chain.width/2-s.x:s.x-chain.width/2,p.getY(i),s.z)}
  p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
 }
+
+// Thick moving block: same curve as the visible active leaf, offset along
+// its tangent normal at three depth layers. No per-leaf meshes are allocated.
+export function createChunkGeometry(w:number,h:number){
+ const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
+ return {g,pose(chain:Chain,depth:number){for(let i=0;i<p.count;i++){const a=sampleChain(chain,original[i*3]/w+.5),off=original[i*3+2]*depth;p.setXYZ(i,a.x-a.tz*off,original[i*3+1],a.z+a.tx*off)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+}

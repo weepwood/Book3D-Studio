@@ -3,10 +3,10 @@ import {clamp} from './pagePhysics'
 // Reference keeps six live leaves near the split. Here the same limit bounds
 // a contiguous active batch; stationary stack meshes represent the remainder.
 export const LIVE_LEAF_LIMIT=6
-export type ActiveLeaf={direction:1|-1;progress:number;opening?:boolean;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}
-export function batchLayout(index:number,count:number,depth:number,direction:1|-1,requested:number){
+export type ActiveLeaf={direction:1|-1;progress:number;opening?:boolean;span?:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}
+export function batchLayout(index:number,count:number,depth:number,direction:1|-1,requested:number,chunk=false){
   const unit=depth/Math.max(1,count),i=clamp(index,0,count)
-  const active=Math.max(0,Math.min(LIVE_LEAF_LIMIT,Math.floor(requested),direction===1?count-i:i))
+  const active=Math.max(0,Math.min(chunk?count:LIVE_LEAF_LIMIT,Math.floor(requested),direction===1?count-i:i))
   const left=unit*(i-(direction===-1?active:0)),right=unit*(count-i-(direction===1?active:0))
   return {left,right,unit,active,moving:unit*active}
 }
@@ -34,3 +34,6 @@ export function openingLeaves(index:number,count:number,elapsedMs:number):Active
  if(n<=0||elapsedMs>=n*R.gravityDelayMs+R.gravityDropMs)return []
  return Array.from({length:n},(_,slot)=>({direction,opening:true,progress:.5*(1-gravityDrop(elapsedMs,slot,n)),grip:0,curlAmount:0,grabU:1}))
 }
+
+export function activeSpan(leaves:ActiveLeaf[]){return leaves.reduce((n,a)=>n+Math.max(1,a.span??1),0)}
+export function chunkDepths(layout:ReturnType<typeof batchLayout>){return {left:layout.left+layout.moving/2,right:layout.right+layout.moving/2}}
