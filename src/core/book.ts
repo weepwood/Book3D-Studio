@@ -148,6 +148,9 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     pagePivot.position.copy(hinge.position);pagePivot.rotation.y=pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15
     const bindingPose={hingeX:hinge.position.x,rearZ:-coverZ,frontZ:hinge.position.z,angle:hinge.rotation.y,board:t,inset,rounded:current.spineStyle==='rounded'}
     outerBinding.pose(bindingPose);innerBindingShape.pose(bindingPose)
+    // The lining is an interior component, not a second exterior spine.
+    // At small openings it is enclosed by the covers and paper block.
+    innerBinding.visible=deg>=35
     const frontAngles=coverBoneAngles(pose.bone*(BONE_COUNT-1)),rearAngles=coverBoneAngles(-pose.bone*(BONE_COUNT-1)*.25)
     rig.bones.forEach((bone,i)=>{bone.rotation.y=frontAngles[i]});rearRig.bones.forEach((bone,i)=>{bone.rotation.y=rearAngles[i]})
     refreshPages();root.updateMatrixWorld(true);for(const cover of [rig.mesh,back]){cover.computeBoundingSphere();cover.computeBoundingBox()}

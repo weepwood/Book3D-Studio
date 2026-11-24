@@ -48,3 +48,11 @@ export function anchorBetween(from:{x:number;z:number},to:{x:number;z:number},p:
   p=clamp(p)
   return {x:from.x+(to.x-from.x)*p,z:from.z+(to.z-from.z)*p+Math.sin(Math.PI*p)*Math.abs(to.z-from.z)*.55}
 }
+
+// Direct manipulation uses the projected page travel, not the whole canvas.
+// Keep the original reference curve for touch and automatic paths.
+export function projectedDrag(x:number,y:number,dx:number,dy:number,travel:number){return {distance:x*dx+y*dy,progress:clamp((x*dx+y*dy)/Math.max(48,travel),-1,1)}}
+export function stepManualRelease(progress:number,target:0|1,dt:number,duration:number){
+ const rate=8/Math.max(.3,duration),next=progress+(target-progress)*(1-Math.exp(-rate*clamp(dt,0,.25)))
+ return Math.abs(target-next)<.002?{progress:target,velocity:0,settled:true}:{progress:next,velocity:0,settled:false}
+}
