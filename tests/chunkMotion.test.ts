@@ -12,3 +12,9 @@ describe('手动厚块独立交接纸页',()=>{
  it('自动不创建交接叶，手动保留起始卷曲并衰减，取消后回收',()=>{const auto=newChunkMotion(false);expect(auto.handoff).toBe(false);const m=newChunkMotion(true,0,0,.7);stepChunk(m,10,1/60,true,true,0,0);expect(m.handoff).toBe(true);expect(m.handoffCurl).toBe(.7);for(let i=0;i<60;i++)stepChunk(m,10,1/60,true,true,.4,0);expect(m.handoff).toBe(false);expect(m.handoffCurl).toBe(0);for(let i=0;i<240&&m.phase!=='landed';i++)stepChunk(m,10,1/60,true,false,0,0);expect(m.progress).toBe(0);expect(m.handoff).toBe(false)})
  it('双向交接使用实际块面，零卷曲只偏移极小深度',()=>{const g=createChunkGeometry(1.5,2),chain=makeChain(1.5,.2,.7);for(const direction of [1,-1] as const){g.pose(chain,.2,undefined,undefined,0,{direction,progress:direction===1?.2:.8,curl:0,grip:0,grabU:1});const a=g.g.getAttribute('position'),b=g.handoff.getAttribute('position'),indices=g.handoff.index!.array;for(const i of indices){expect(Math.hypot(a.getX(i)-b.getX(i),a.getY(i)-b.getY(i),a.getZ(i)-b.getZ(i))).toBeCloseTo(.0003,5)}expect(Array.from(b.array).every(Number.isFinite)).toBe(true)}g.g.dispose();g.handoff.dispose()})
 })
+
+it('慢帧首次可见时仍存在交接叶，后续自然衰减而不是跳过首帧',()=>{
+ const m=newChunkMotion(true,0,0,.3);stepChunk(m,9,.25,false,true,.08,0);expect(m.visible).toBe(false);expect(m.handoffFrames).toBe(0)
+ stepChunk(m,9,.25,true,true,.08,0);expect(m.visible).toBe(true);expect(m.handoff).toBe(true);expect(m.handoffCurl).toBe(.3);expect(m.handoffFrames).toBe(1)
+ stepChunk(m,9,.25,true,true,.4,0);expect(m.handoff).toBe(false);expect(m.handoffCurl).toBe(0)
+})

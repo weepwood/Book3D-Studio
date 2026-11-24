@@ -9,3 +9,10 @@ describe('翻页动力学',()=>{
  it('装订边固定，页角随抓取位置变化且端点一致',()=>{expect(curlPoint(0,.5,.5,2,3,1,1,1,2)).toEqual([0,1.5,0]);const upper=curlPoint(1,.5,.5,2,3,1,1,1,0),lower=curlPoint(1,-.5,.5,2,3,1,1,1,0);expect(upper[2]).toBeGreaterThan(lower[2]);for(const p of [0,1])expect(curlPoint(1,.5,p,2,3,1,1,1,0)[0]).toBeCloseTo(p===0?2:-2);expect(anchorBetween({x:1,z:2},{x:-1,z:3},0)).toEqual({x:1,z:2});expect(anchorBetween({x:1,z:2},{x:-1,z:3},1).z).toBeCloseTo(3)})
  it('旧版参数兼容及范围校验',()=>{expect(parseConfig({version:1}).pageBleed).toBe(.065);expect(()=>parseConfig({version:1,pageBleed:.5})).toThrow()})
 })
+
+it('最慢翻页设置下双向释放及时收敛，不依赖高帧率',()=>{
+ for(const goal of [0,1])for(const dt of [1/240,1/60,.05,.25])for(const initial of [.1,.45,.9]){
+  let p=initial,v=0,elapsed=0,done=false;while(elapsed<18){const n=stepTurn(p,v,goal,dt,2);p=n.progress;v=n.velocity;elapsed+=dt;if(n.settled){done=true;break}}
+  expect(done,`goal=${goal}, dt=${dt}, initial=${initial}, progress=${p}`).toBe(true);expect(p).toBe(goal);expect(v).toBe(0)
+ }
+})

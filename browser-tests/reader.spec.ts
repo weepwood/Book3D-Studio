@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test'
+import {writeFile} from 'node:fs/promises'
 test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page},testInfo)=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/WebGLProgram|shader error|VALIDATE_STATUS/i.test(m.text()))errors.push(m.text())})
  await page.goto('/')
@@ -168,6 +169,17 @@ test('设置分组重置、材质预设与跨页选择保留作品数据',async(
 })
 
 test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testInfo)=>{
+ // Read pixels inside the same rAF as the actual WebGL draw, not after a
+ // later Playwright screenshot command has allowed the overlay to disappear.
+ await page.addInitScript(()=>{
+   const w=window as Window&{__handoffFrame?:string};const raf=window.requestAnimationFrame.bind(window)
+   window.requestAnimationFrame=callback=>raf(now=>{
+     callback(now);const host=document.querySelector<HTMLElement>('.canvas-host')
+     if(!w.__handoffFrame&&host?.dataset.chunkHandoff==='true'&&Number(host.dataset.renderedHandoffFrames)>0){
+       const canvas=host.querySelector('canvas');if(canvas)w.__handoffFrame=canvas.toDataURL('image/png')
+     }
+   })
+ })
  await page.goto('/')
  await page.getByRole('button',{name:/内页/}).first().click()
  const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
@@ -178,8 +190,13 @@ test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testI
  const point=JSON.parse((await host.getAttribute('data-large-group-pick'))!) as [number,number]
  await page.mouse.move(...point);await page.mouse.down();await page.mouse.move(point[0]-8,point[1]);
  await expect.poll(async()=>Number(await host.getAttribute('data-group-drag'))).toBeGreaterThan(6)
- await expect(host).toHaveAttribute('data-chunk-handoff','true',{timeout:10000})
- await page.screenshot({path:testInfo.outputPath('chunk-handoff.png')})
+ // The handoff is transient. Require evidence of an actually rendered
+ // overlay even when slow software WebGL advances past it before polling.
+ await expect.poll(async()=>Number(await host.getAttribute('data-rendered-handoff-frames')),{timeout:10000}).toBeGreaterThan(0)
+ const png=await page.evaluate(()=>(window as Window&{__handoffFrame?:string}).__handoffFrame)
+ expect(png?.startsWith('data:image/png;base64,')).toBe(true)
+ const bytes=Buffer.from(png!.split(',')[1],'base64');expect(bytes.length).toBeGreaterThan(10000)
+ await writeFile(testInfo.outputPath('chunk-handoff.png'),bytes)
  await page.mouse.move(point[0]-150,point[1],{steps:4});await expect(host).toHaveAttribute('data-chunk-handoff','false',{timeout:15000})
  await page.mouse.move(point[0]+15,point[1],{steps:4});await page.mouse.up()
  await expect(host).toHaveAttribute('data-chunk-phase','idle',{timeout:55000});await expect(host).toHaveAttribute('data-page-index','0')

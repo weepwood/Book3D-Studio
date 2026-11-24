@@ -57,6 +57,7 @@ export class BookRuntime {
   private followers:TurnState[]=[]
   private hovered=false
   private peakActive=0
+  private renderedHandoffFrames=0
   private last=0
   private open=0
   private index=0
@@ -172,7 +173,7 @@ export class BookRuntime {
     this.book.root.position.set(this.config.width/200*this.readPose,0,0).applyEuler(this.book.root.rotation)
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     this.updateReadingCamera(dt,ready)
-    this.renderer.render(this.scene,this.camera);this.drawing=false
+    this.renderer.render(this.scene,this.camera);if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
     if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(!this.turn){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.readingView.zoom,this.readingView.x,this.readingView.y,this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.groupProbeKey=key;this.groupProbe='';this.largeGroupProbe='';const canLarge=leafCount(this.config)-this.index>6;for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const group=this.findGroup(x,y);if(group){if(!this.groupProbe)this.groupProbe=json;if(group.group>6)this.largeGroupProbe=json;if(!canLarge||this.largeGroupProbe)break}}}this.host.dataset.groupPick=this.groupProbe;this.host.dataset.largeGroupPick=this.largeGroupProbe}}
     if(this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
@@ -194,7 +195,7 @@ export class BookRuntime {
     if(regrab){if(!this.turn||this.turn.preview||this.turn.direction!==direction)return false}
     else if(this.turn&&!this.turn.preview||this.index!==this.config.pageIndex)return false
     const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;this.hovered=false;t.grip=grip;t.dragTarget=t.progress;t.grabU=grabU;this.turn=t;this.dragging=true;this.releaseGoal=null
-    this.regrab=regrab;this.host.dataset.dragAccepted=regrab?'regrab':'new';this.brakeElapsed=0;const available=direction===1?leafCount(this.config)-this.index:this.index;this.groupDrag=regrab?(t.span??1)+this.followers.length:Math.max(1,Math.min(group,available));t.chunkElapsed=undefined;t.chunkGesture=true;t.dragOrigin=t.progress;if(regrab){for(const a of this.followers)a.dragOrigin=a.progress}else if(this.groupDrag>6){t.span=this.groupDrag;this.followers=[]}else{t.span=undefined;this.followers=Array.from({length:this.groupDrag-1},()=>newTurn(direction))}if((t.span??1)>1)t.chunkMotion=newChunkMotion(true,t.progress,t.chunkMotion?.lift??0,t.curlAmount||curlTarget('hover',t.progress,t.grabU,this.config.pageCorner*this.config.pageHover));this.invalidate();return true
+    this.renderedHandoffFrames=0;this.host.dataset.renderedHandoffFrames='0';this.regrab=regrab;this.host.dataset.dragAccepted=regrab?'regrab':'new';this.brakeElapsed=0;const available=direction===1?leafCount(this.config)-this.index:this.index;this.groupDrag=regrab?(t.span??1)+this.followers.length:Math.max(1,Math.min(group,available));t.chunkElapsed=undefined;t.chunkGesture=true;t.dragOrigin=t.progress;if(regrab){for(const a of this.followers)a.dragOrigin=a.progress}else if(this.groupDrag>6){t.span=this.groupDrag;this.followers=[]}else{t.span=undefined;this.followers=Array.from({length:this.groupDrag-1},()=>newTurn(direction))}if((t.span??1)>1)t.chunkMotion=newChunkMotion(true,t.progress,t.chunkMotion?.lift??0,t.curlAmount||curlTarget('hover',t.progress,t.grabU,this.config.pageCorner*this.config.pageHover));this.invalidate();return true
   }
   dragPage(progress:number,_velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.turn.grabU=grabU;this.invalidate()}}
   endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??(this.regrab?displacementPx>=5||displacementPx>-5&&t.progress>.5:releaseCommit(displacementPx));const index=accepted?nextLeaf(this.index,t.direction*this.groupDrag,leafCount(this.config)):this.index;this.dragging=false;this.regrab=false;t.velocity=0;this.releaseGoal=accepted?1:0;this.groupDrag=1;this.invalidate();return index}

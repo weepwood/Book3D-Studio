@@ -1,11 +1,11 @@
 import {clamp} from './pagePhysics'
 import {chunkAutoProgress,chunkRelease} from './referenceScene'
 export type ChunkPhase='prepare'|'gather'|'turn'|'release'|'landed'
-export type ChunkMotion={phase:ChunkPhase;gesture:boolean;visible:boolean;progress:number;lift:number;waitMs:number;elapsedMs:number;landedFrames:number;goal:0|1|null;handoff:boolean;handoffCurl:number}
+export type ChunkMotion={phase:ChunkPhase;gesture:boolean;visible:boolean;progress:number;lift:number;waitMs:number;elapsedMs:number;landedFrames:number;goal:0|1|null;handoff:boolean;handoffCurl:number;handoffFrames:number}
 export const CHUNK_TEXTURE_TIMEOUT=1200
 export const CHUNK_LANDED_FRAMES=4
 const smooth=(a:number,b:number,x:number)=>{const t=clamp((x-a)/(b-a));return t*t*(3-2*t)}
-export const newChunkMotion=(gesture:boolean,progress=0,lift=0,cornerCurl=0):ChunkMotion=>({phase:progress>0?(gesture?'gather':'turn'):'prepare',gesture,visible:progress>0,progress,lift,waitMs:0,elapsedMs:0,landedFrames:0,goal:null,handoff:gesture&&progress<.02,handoffCurl:gesture&&progress<.02?Math.max(0,cornerCurl):0})
+export const newChunkMotion=(gesture:boolean,progress=0,lift=0,cornerCurl=0):ChunkMotion=>({phase:progress>0?(gesture?'gather':'turn'):'prepare',gesture,visible:progress>0,progress,lift,waitMs:0,elapsedMs:0,landedFrames:0,goal:null,handoff:gesture&&progress<.02,handoffCurl:gesture&&progress<.02?Math.max(0,cornerCurl):0,handoffFrames:0})
 export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dragging:boolean,target:number,goal:0|1){
  dt=clamp(dt,0,.25)
  const approach=(v:number,t:number,k:number)=>v+(t-v)*(1-Math.exp(-k*dt))
@@ -31,9 +31,14 @@ export function stepChunk(m:ChunkMotion,count:number,dt:number,ready:boolean,dra
  // origin or its visible curl has not decayed below .02. No automatic leaf.
  if(m.handoff){
    if(m.phase==='landed'){m.handoff=false;m.handoffCurl=0}
-   else if(!(m.phase==='gather'&&m.progress<.02)){
-     m.handoffCurl*=Math.pow(.82,dt*60)
-     if(m.handoffCurl<.02){m.handoff=false;m.handoffCurl=0}
+   else if(m.visible){
+     // The first visible pose must actually contain the independent leaf.
+     // A large dt on SwiftShader must not decay it before its first render.
+     if(m.handoffFrames>0&&!(m.phase==='gather'&&m.progress<.02)){
+       m.handoffCurl*=Math.pow(.82,dt*60)
+       if(m.handoffCurl<.02){m.handoff=false;m.handoffCurl=0}
+     }
+     if(m.handoff)m.handoffFrames++
    }
  }
 }
