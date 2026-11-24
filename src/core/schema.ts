@@ -36,6 +36,9 @@ export type BookConfig = {
   pageIndex: number
   pageCurl: number
   pageDuration: number
+  pageBleed: number
+  pageHover: number
+  pageCorner: number
   pageCount: number
   yaw: number
   pitch: number
@@ -49,14 +52,14 @@ export const defaults: BookConfig = {
   spineStyle: 'rounded', coverFlex: .28, pageCoupling: .45,
   coverColor: '#354d40', paperColor: '#e8dfca', inkColor: '#dec48d',
   finish: 'cloth', roughness: 0.68, coverImage: '', backImage:'', spineImage:'', backText:'', spineText:'',
-  coverZoom:1, coverX:0, coverY:0, backZoom:1, backX:0, backY:0, spineZoom:1, spineX:0, spineY:0, opening: 0, pageImages:[], pageIndex:0, pageCurl:.72, pageDuration:.85, pageCount:12, yaw: -28, pitch: 12,
+  coverZoom:1, coverX:0, coverY:0, backZoom:1, backX:0, backY:0, spineZoom:1, spineX:0, spineY:0, opening: 0, pageImages:[], pageIndex:0, pageCurl:.72, pageDuration:.85, pageBleed:.065, pageHover:.7, pageCorner:.65, pageCount:12, yaw: -28, pitch: 12,
   light: 3, background: '#e9e7df', interaction: 'click'
 }
 export const ranges = {
   width:[90,250], height:[120,320], thickness:[8,80],
   boardThickness:[.8,3], cornerRadius:[0,4], pageInset:[1,4], coverFlex:[0,1], pageCoupling:[0,1],
   coverZoom:[1,3], coverX:[-1,1], coverY:[-1,1], backZoom:[1,3], backX:[-1,1], backY:[-1,1], spineZoom:[1,3], spineX:[-1,1], spineY:[-1,1],
-  roughness:[0.05,1], opening:[0,180], pageCurl:[0,1], pageDuration:[.3,2], pageCount:[2,40], pageIndex:[0,20], yaw:[-180,180], pitch:[-65,65], light:[0.2,6]
+  roughness:[0.05,1], opening:[0,180], pageCurl:[0,1], pageDuration:[.3,2], pageBleed:[0,.18], pageHover:[0,1], pageCorner:[0,1], pageCount:[2,40], pageIndex:[0,20], yaw:[-180,180], pitch:[-65,65], light:[0.2,6]
 } as const
 export function parseConfig(raw: unknown): BookConfig {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('无效项目文件')
