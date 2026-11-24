@@ -1,0 +1,7 @@
+import {describe,it,expect} from 'vitest'
+import {boundLayer,boundLayers,bindingCompression,turningChain,stackSection,paperEdgeRepeat,createStackGeometry} from '../src/core/stackGeometry'
+import {sampleChain} from '../src/core/pageChain'
+describe('V0.7 纸张曲率与书芯实体厚度',()=>{
+ it('整段活动纸张连续且保持弧长，端点与静止纸面一致',()=>{const w=1.47,r=boundLayer(w,.27,.7),l=boundLayer(w,.135,.7,-1);for(const split of [0,.25,.5,.75,1])for(const p of [0,.01,.05,.1,.25,.5,.75,.9,.99,1]){const c=turningChain(w,p,.72,r,l,split);let len=0;for(let i=1;i<257;i++){const a=sampleChain(c,(i-1)/256),b=sampleChain(c,i/256);len+=Math.hypot(a.x-b.x,a.z-b.z)}expect(Math.abs(len/w-1)).toBeLessThan(.008);expect(Array.from(c.positions).every(Number.isFinite)).toBe(true)}expect(turningChain(w,0,.7,r,l)).toBe(r);const end=turningChain(w,1,.7,r,l);expect(end.positions[64]).toBeCloseTo(-l.positions[64]);expect(end.positions[65]).toBeCloseTo(-l.positions[65])})
+ it('固定几何规格的前缘厚度守恒、根部收拢、纹理密度不随分块变化',()=>{const w=1.53,d=.2874,c=bindingCompression(1,.45,w,d);for(const split of [0,.25,.5,.75,1]){const dl=d*split,dr=d-dl,a=boundLayers(w,dl,c),b=boundLayers(w,dr,c);expect(stackSection(a,dl,c,1).thickness+stackSection(b,dr,c,1).thickness).toBeCloseTo(d,4);expect(stackSection(a,dl,c,0).thickness).toBeCloseTo(dl*(1-c));expect(paperEdgeRepeat(w,dl)+paperEdgeRepeat(w,dr)).toBeCloseTo(paperEdgeRepeat(w,d));const g=createStackGeometry(w,2);g.pose(b,dr,1,c);expect(Array.from(g.g.getAttribute('uv').array).every(Number.isFinite)).toBe(true);g.g.dispose()}})
+})

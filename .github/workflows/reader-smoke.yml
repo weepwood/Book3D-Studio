@@ -10,6 +10,7 @@ on:
       - 'src/core/stackProfile.ts'
       - 'src/core/referenceScene.ts'
       - 'src/core/readingCamera.ts'
+      - 'scripts/fixtures/**'
       - 'src/core/paperShading.ts'
       - 'src/core/textureWarm.ts'
       - 'src/core/bindingGeometry.ts'

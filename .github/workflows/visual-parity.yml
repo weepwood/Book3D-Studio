@@ -4,6 +4,10 @@ on:
     paths:
       - 'scripts/visual-parity.mjs'
       - 'src/core/paperShading.ts'
+      - 'src/core/stackGeometry.ts'
+      - 'src/core/readingCamera.ts'
+      - 'src/core/book.ts'
+      - 'src/core/runtime.ts'
       - 'src/core/textureWarm.ts'
       - '.github/workflows/visual-parity.yml'
   workflow_dispatch:

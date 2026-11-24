@@ -36,3 +36,13 @@ V0.6 后续触摸专项 feat/v0.6-touch-reading 基于 PR #8，新增双指缩�
 
 ## 当前发布收口（以此为准）
 #7–#12 已合并，#12 主分支 d9741af。ff13630 三项 CI 全绿、artifact 14932490853 人工确认原站展开且页码136–137→138–139，本地错误列表为空；深色环衬彩色颗粒过强。release/v0.6.0 仅修复该问题、统一版本与发布文档，增加手动发布门禁。待候选最新 quick/browser/capture 和真实截图复核后 squash 合并；确认 main CI、Pages 成功后以精确 main SHA 运行 Publish release。不得提前打 Tag，亦不得宣称像素一致。剩余：同尺寸构图、厚度及静止曲率、精确阴影梯度、handoffLeaf、真实设备。
+
+## V0.7 当前专项（以此为准）
+V0.6.0 已正式发布，Tag 指向 6efad67，Publish release 45417732302 成功，ZIP/校验文件已确认。V0.7 feat/v0.7-visual-calibration 集中 01/02/03/07：不虚增用户物理厚度，按源 .0234/15.6 统一边缘纹理密度；活动页从坐标混合改为切线积分，源 liveCurl 和 flop 按阅读比例适配；稳定展开模型投影 fit .96 并保留本地控件安全区和手动预设；固定规格 JSON 与 v0.6.0 同素材同视口对照。最新四项 CI 和真实截图必须复核；不同原站书籍与镜头不宣称像素级一致。
+### V0.7 2026-11-24 续接
+PR #14 dcf15b2 四项 CI 均成功。真实 matched-visual artifact 14931978996 已下载并人工检查 v0.6.0/candidate middle、candidate turn：同素材同规格下展开构图显著扩大（候选 fit 投影宽度 93.17%、高度 59.27%），中间跨页左右纸芯各约 0.1437 世界单位，总计 0.2874，物理守恒；底部视觉仍偏薄，纸面颗粒与装订静止曲率仍需对照原站。旧 turn 截图不与逻辑进度同步，不作精确曲率结论。本轮补充装订参数/页数变化的阅读适配缓存失效、场景适配按钮与视口选择同步、真实浏览器回归和同一动画回调内的 canvas 证据。新提交须重新跑 CI，检查同步画面和真实原站截图后方可合并。保留 handoffLeaf、完整原版阴影梯度、真实移动设备为后续专项，不扩大 PDF 范围。
+
+### #14 原站视觉采集复审
+94889f6 的四项 CI 通过，但 artifact 14933663688 实际截图显示目标封面（页码 116–117→118–119 并不能证明展开）。本机 Edge 原站诊断通过公开按钮 scrollIntoViewIfNeeded 后 DOM click，实际截图 /tmp/book3d-source-debug.png 确认为 Nomad Letters 168–169 展开双页。修复脚本取消依赖动态 carousel 坐标的 pointer 激活，记录点击当时的 aria-label，翻页使用公开按钮 DOM click；仍需检查最终真实截图，不能把捕获成功等同于视觉验收。
+
+fa5e4c1 完整复跑仍复现错位：激活 Nomad Letters，但首页轮播切到 Built to Grow 封面，readout 168–169→170–171 仍不能证明展开。已从公开链接确认固定详情路由 /book/nomad-letters；本机 Edge 单独验证固定路由打开及下一页，截图 /tmp/book3d-fixed-route-open.png、/tmp/book3d-fixed-route-next.png，路由与书名一致。采集改用固定详情路由、精确按钮标签、站点菜单 Current book 身份断言；不依赖轮播首页，不放宽人工视觉门禁。新 CI 必须复查。
