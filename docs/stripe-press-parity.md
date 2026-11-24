@@ -57,3 +57,6 @@ PR #7 c1377fa 的真实采集 artifact 14920141980 已人工检查：展开纸�
 
 ## V0.6 触摸阅读专项
 源 04ud9... controller 的 pending/pan/page/pinch 状态、8px slop、6px 边界、panRubber=.28、snapLookahead=.18 已核实。独立 Pointer Events 状态机接管阅读触摸，双指中点锚定缩放、第二指取消在途页拖动、剩余一指 hold 防误翻页，单指方向/边界决定翻页或平移，释放时按投影宽度和速度吸附；保留现有鼠标交互。单页 snap 使用当前模型投影宽度适配，不是原站精确 fitZoom；新增计算回归及 Chromium CDP 多触点真实输入测试，未验证真实 iOS/Android 硬件。
+
+## V0.6 双封面与整块扭转
+原版 3fe65... 明确 frontcover1..5 / backcover1..5 的 .8**i 逐节衰减。独立模型改为双 SkinnedMesh，各五骨骼，保持现有前封面总弯曲角，后封面按同一衰减向远离纸芯方向弯曲（总幅度取前封面25%作为编辑器适配），固定 binding lip 蒙皮以保持内外书脊端点，不复制 glTF。原版 04ud... blockPoseTwist 的 .04/.46 进度窗口及 .42rad 最大滞后接入厚块 12 高度分段，按抓取方向选择滞后一侧；自动翻动保持无扭转。移除厚块隐藏单页 GPU/纹理分配和重复 GPU 更新。尚未完整移植原版 handoffLeaf/纹理预热/抬升与落地相位。

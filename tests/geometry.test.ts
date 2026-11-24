@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest'
 import * as T from 'three'
-import {boardGeometry,bookDimensions,openingPose,skinWeights,skinnedBoard} from '../src/core/geometry'
+import {boardGeometry,bookDimensions,openingPose,skinWeights,skinnedBoard,coverBoneAngles} from '../src/core/geometry'
 import {parseConfig,defaults} from '../src/core/schema'
 
 describe('参数化几何',()=>{
@@ -21,6 +21,7 @@ describe('参数化几何',()=>{
     expect(skinWeights(0,1).weights[0]).toBe(1)
     expect(skinWeights(1,1).indices[0]).toBe(4)
   })
+  it('五节骨骼衰减保持总角度且固定装订根部',()=>{const a=coverBoneAngles(-.4);expect(a).toHaveLength(5);expect(a[0]).toBe(0);expect(a.reduce((x,y)=>x+y,0)).toBeCloseTo(-.4);for(let i=2;i<5;i++)expect(a[i]/a[i-1]).toBeCloseTo(.8);for(const x of [0,.01,.02])expect(skinWeights(x,1.5,.02).weights[0]).toBe(1);expect(skinWeights(.375,1.5,.02).indices[0]).toBe(1)})
   it('关闭时保持无形变，联动不超过封面',()=>{
     expect(openingPose(0,1,1)).toEqual({hinge:-0,bone:-0,page:-0})
     for(let a=1;a<=150;a++){

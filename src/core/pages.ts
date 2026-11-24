@@ -102,19 +102,17 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor)keys.clear()
     config=next;chunkEdge.color.set(next.paperColor)
   }
-  function pose(index:number,count:number,active:ActiveLeaf[],curl:number){
+  function pose(index:number,count:number,active:ActiveLeaf[]){
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)
     assign(right.material,direction===1?next.right:faces.right)
     const block=(active[0]?.span??1)>1;chunk.visible=block
     if(block){const n=active[0].span!,lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1)}
-    active.forEach((a,i)=>{
+    if(!block)active.forEach((_a,i)=>{
       const s=slot(i),moving=turnFaces(index+direction*i,direction)
-      assign(s.front,moving.front);assign(s.back,moving.back,true)
-      s.gpu.update(direction===1?a.progress:1-a.progress,curl,a.curlAmount??0,a.grip??0,a.grabU??1)
-      s.leaf.visible=!block
+      assign(s.front,moving.front);assign(s.back,moving.back,true);s.leaf.visible=true
     })
-    for(let i=active.length;i<slots.length;i++)slots[i].leaf.visible=false
+    for(let i=block?0:active.length;i<slots.length;i++)slots[i].leaf.visible=false
   }
   return {root,left,right,slots,chunk,chunkShape,update,pose,dispose:()=>slots.forEach(s=>s.gpu.dispose())}
 }

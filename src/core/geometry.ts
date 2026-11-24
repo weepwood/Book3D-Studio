@@ -1,8 +1,9 @@
 import * as T from 'three'
 
 export const BONE_COUNT=5
-export function skinWeights(x:number,width:number){
-  const u=T.MathUtils.clamp(x/width,0,1)*(BONE_COUNT-1)
+export function skinWeights(x:number,width:number,rigidRoot=0){
+  const first=width/(BONE_COUNT-1),lip=Math.min(first*.9,Math.max(0,rigidRoot))
+  const u=x<first?T.MathUtils.clamp((x-lip)/(first-lip),0,1):T.MathUtils.clamp(x/width,0,1)*(BONE_COUNT-1)
   const a=Math.floor(u),b=Math.min(a+1,BONE_COUNT-1),f=u-a
   return {indices:[a,b,0,0],weights:[1-f,f,0,0]}
 }
@@ -52,16 +53,20 @@ export function boardGeometry(w:number,h:number,t:number,radius:number,segments=
   return g
 }
 
-export function skinnedBoard(w:number,h:number,t:number,radius:number,materials:T.Material[]){
+export const COVER_BONE_DECAY=.8
+// Preserve total flex from the editor while using the reference's geometric
+// falloff. The root bone stays fixed at the binding contact.
+export function coverBoneAngles(total:number){const weights=Array.from({length:BONE_COUNT-1},(_,i)=>COVER_BONE_DECAY**i),sum=weights.reduce((a,b)=>a+b,0);return [0,...weights.map(v=>total*v/sum)]}
+export function skinnedBoard(w:number,h:number,t:number,radius:number,materials:T.Material[],name='cover',rigidRoot=0){
   const g=boardGeometry(w,h,t,radius)
   const p=g.getAttribute('position'),indices:number[]=[],weights:number[]=[]
   for(let i=0;i<p.count;i++){
-    const s=skinWeights(p.getX(i),w);indices.push(...s.indices);weights.push(...s.weights)
+    const s=skinWeights(p.getX(i),w,rigidRoot);indices.push(...s.indices);weights.push(...s.weights)
   }
   g.setAttribute('skinIndex',new T.Uint16BufferAttribute(indices,4))
   g.setAttribute('skinWeight',new T.Float32BufferAttribute(weights,4))
   const bones=Array.from({length:BONE_COUNT},()=>new T.Bone())
-  bones.forEach((b,i)=>{b.name='cover_'+i;if(i){b.position.x=w/(BONE_COUNT-1);bones[i-1].add(b)}})
+  bones.forEach((b,i)=>{b.name=name+(i+1);if(i){b.position.x=w/(BONE_COUNT-1);bones[i-1].add(b)}})
   const mesh=new T.SkinnedMesh(g,materials)
   mesh.add(bones[0]);mesh.updateMatrixWorld(true)
   const skeleton=new T.Skeleton(bones);mesh.bind(skeleton)

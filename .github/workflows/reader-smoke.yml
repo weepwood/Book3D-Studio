@@ -15,6 +15,7 @@ on:
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
       - 'src/core/book.ts'
+      - 'src/core/geometry.ts'
       - 'src/core/runtime.ts'
       - 'src/main.tsx'
       - 'browser-tests/**'
