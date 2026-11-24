@@ -190,6 +190,15 @@ export class BookRuntime {
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
     if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c)
   }
+  switchProject(c:BookConfig){
+    // A project change is not a page-turn command. Reset transient state
+    // before applying the new model, while retaining the WebGL renderer.
+    this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
+    this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
+    this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
+    this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
+    this.invalidate()
+  }
   beginPageDrag(direction:1|-1,grip=0,grabU=1,group=1,regrab=false){
     if(this.config.opening<READ_ANGLE||this.open<179.5||this.openingActive||this.reduced.matches||nextLeaf(this.index,direction,leafCount(this.config))===this.index)return false
     if(regrab){if(!this.turn||this.turn.preview||this.turn.direction!==direction)return false}
