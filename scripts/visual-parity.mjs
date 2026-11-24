@@ -24,22 +24,28 @@ await record('local closed/open/turn',async()=>{
  await local.waitForFunction(()=>document.querySelector('.canvas-host')?.dataset.pageIndex==='3',{},{timeout:60000})
  await shot(local,'local-middle-spread')
 })
+await local.close()
 const source=await browser.newPage({viewport})
+source.setDefaultTimeout(30000)
+const diagnostics=[];source.on('pageerror',e=>diagnostics.push(e.message));source.on('console',m=>{if(m.type()==='error')diagnostics.push(m.text().slice(0,240))})
 await record('Stripe Press source browse',async()=>{
  await source.goto('https://stripe.press/',{waitUntil:'domcontentloaded',timeout:45000})
- await source.locator('canvas').first().waitFor({timeout:30000})
- await source.waitForTimeout(2500);await shot(source,'reference-browse')
+ await source.locator('canvas').first().waitFor({timeout:60000})
+ await source.getByRole('button',{name:/^Open book:/i}).filter({visible:true}).first().waitFor({timeout:60000})
+ await source.waitForTimeout(3500);await shot(source,'reference-browse')
 })
 await record('Stripe Press open book',async()=>{
  // Public landing page contains Open book; exact interaction/edition may vary.
  const open=source.getByRole('button',{name:/^Open book:/i}).filter({visible:true}).first()
  await open.waitFor({state:'visible',timeout:30000})
- // The featured carousel animates its button: Playwright's stable-element
- // gate can time out. Force still sends a real pointer click, not JS state.
- await open.click({timeout:15000,force:true})
- await source.getByRole('button',{name:/Close book|Close preview|Close reader/i}).filter({visible:true}).first().waitFor({state:'visible',timeout:30000}).catch(async()=>{
-   const close=source.locator('[data-home-corner="close"]').filter({visible:true}).first();await close.waitFor({state:'visible',timeout:10000})
- })
+ // Use the public button's actual activation; the carousel can move it
+ // during CDP mouse dispatch in SwiftShader. The fallback is explicitly logged.
+ try{const rect=await open.boundingBox();if(!rect)throw Error('No visible button bounds');await source.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2,{delay:30});diagnostics.push('activation: pointer')}catch(e){diagnostics.push('pointer activation: '+String(e).slice(0,300))}
+ const closed=source.getByText(/Close book\\s*\\[-\\]/i).filter({visible:true}).first()
+ try{await closed.waitFor({state:'visible',timeout:10000})}catch{
+   await open.evaluate(button=>button.click());diagnostics.push('activation fallback: public button DOM click')
+   await closed.waitFor({state:'visible',timeout:30000})
+ }
  await source.waitForTimeout(800)
  await shot(source,'reference-opening-early')
  await source.waitForTimeout(2700);await shot(source,'reference-after-open')
@@ -49,6 +55,7 @@ await record('Stripe Press open book',async()=>{
  await writeFile(dir+'/reference-visible-text.txt',body)
 })
 await browser.close()
+await writeFile(dir+'/source-diagnostics.json',JSON.stringify(diagnostics,null,2))
 await writeFile(dir+'/report.json',JSON.stringify({viewport,results,captures,limitations:'Different books/assets; original camera interaction not locked. Reference early/late frames are separate; late still requires human verification. These are evidence captures, not pixel-level parity.'},null,2))
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;')
 await writeFile(dir+'/index.html','<!doctype html><meta charset=utf-8><title>Stripe Press 对照</title><style>body{font:15px system-ui;background:#eee;margin:24px}main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}img{width:100%;display:block}figure{margin:0;background:white;padding:8px}pre{white-space:pre-wrap}</style><h1>Book3D / Stripe Press 对照</h1><p>同视口证据截图，素材和相机尚未锁定；需要人工验收。</p><main>'+captures.map(n=>'<figure><figcaption>'+esc(n)+'</figcaption><img src="'+n+'.png"></figure>').join('')+'</main><pre>'+esc(JSON.stringify(results,null,2))+'</pre>')

@@ -4,7 +4,7 @@ import { bookDimensions, openingPose, skinnedBoard, boardGeometry } from './geom
 import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
 import {anchorBetween} from './pagePhysics'
 import {batchLayout,leafDepths,gravityDrop,activeSpan,chunkDepths,type ActiveLeaf} from './pageWindow'
-import {createStackGeometry,stackAngle,surfaceChain,turningChain,poseSurface,edgeTriangleCenters} from './stackGeometry'
+import {createStackGeometry,bindingCompression,bindingHeight,boundLayer,boundLayers,turningChain,poseSurface,edgeTriangleCenters} from './stackGeometry'
 import {groupCount} from './referenceScene'
 import {sampleChain,type Chain} from './pageChain'
 import {createBindingGeometry} from './bindingGeometry'
@@ -94,7 +94,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
   let last=-1
   let current=c
   let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurns:ActiveLeaf[]=[],dropMs=2000,stackKey=''
-  let leftLayers:Chain[]=[],rightLayers:Chain[]=[],leftAngle=0,rightAngle=0,leftDepthNow=0,rightDepthNow=0,leftCount=0,rightCount=0
+  let leftLayers:Chain[]=[],rightLayers:Chain[]=[],leftCompression=0,rightCompression=0,leftDepthNow=0,rightDepthNow=0,leftCount=0,rightCount=0
   const refreshPages=()=>{
     const count=leafCount(current),direction=activeTurns[0]?.direction??1
     const block=(activeTurns[0]?.span??1)>1,layout=batchLayout(readingIndex,count,pageDepth,direction,activeSpan(activeTurns),block),leftDepth=layout.left,rightDepth=layout.right
@@ -103,24 +103,25 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     upper.visible=leftDepth>.0001;upper.position.z=-t/2-leftDepth/2
     leftDepthNow=leftDepth;rightDepthNow=rightDepth;leftCount=Math.round(leftDepth/layout.unit);rightCount=Math.round(rightDepth/layout.unit)
     const open=easeTurn(clamp01((last-90)/90)),leftDrop=gravityDrop(dropMs,0,Math.max(1,Math.min(6,leftCount))),rightDrop=gravityDrop(dropMs,0,Math.max(1,Math.min(6,rightCount)))
-    const reading=clamp01((readingIndex+activeTurns.reduce((sum,a)=>sum+(a.opening?0:a.direction*a.progress*(a.span??1)),0))/count)
-    leftAngle=stackAngle(pageWidth,Math.min(pageDepth,pageWidth*.22),leftDrop,open,current.pageCoupling)*(1-reading)
-    rightAngle=stackAngle(pageWidth,Math.min(pageDepth,pageWidth*.22),rightDrop,open,current.pageCoupling)*reading
-    // Empty side is the inside cover; it must remain flat.
-    if(leftCount===0)leftAngle=0;if(rightCount===0)rightAngle=0
-    const key=[leftDepth,rightDepth,leftAngle,rightAngle].join(':')
-    if(key!==stackKey){stackKey=key;leftLayers=[-leftDepth/2,0,leftDepth/2].map(z=>surfaceChain(pageWidth,leftAngle,z));rightLayers=[-rightDepth/2,0,rightDepth/2].map(z=>surfaceChain(pageWidth,rightAngle,z));lowerShape.pose(rightLayers,rightDepth,1);upperShape.pose(leftLayers,leftDepth,-1);poseSurface(pages.right.geometry,rightLayers[2],false);poseSurface(pages.left.geometry,leftLayers[2],true)}
-    pages.right.position.z=base+rightDepth+.002
-    pages.left.position.z=-t/2-leftDepth-.002
+    leftCompression=bindingCompression(open*leftDrop,current.pageCoupling)
+    rightCompression=bindingCompression(open*rightDrop,current.pageCoupling)
+    const key=[leftDepth,rightDepth,leftCompression,rightCompression].join(':')
+    if(key!==stackKey){
+      stackKey=key;leftLayers=boundLayers(pageWidth,leftDepth,leftCompression);rightLayers=boundLayers(pageWidth,rightDepth,rightCompression)
+      lowerShape.pose(rightLayers,rightDepth,1,rightCompression);upperShape.pose(leftLayers,leftDepth,-1,leftCompression)
+      poseSurface(pages.right.geometry,rightLayers[2],false);poseSurface(pages.left.geometry,leftLayers[2],true)
+    }
+    pages.right.position.z=base+bindingHeight(rightDepth,rightCompression)+.002
+    pages.left.position.z=-t/2-bindingHeight(leftDepth,leftCompression)-.002
     const active=activeTurns.slice(0,layout.active)
     pages.pose(readingIndex,count,active,current.pageCurl)
     active.forEach((turn,i)=>{
       const turnP=direction===1?turn.progress:1-turn.progress,depths=block?chunkDepths(layout):leafDepths(layout,direction,i)
-      const from={x:-w/2+gutterInset,z:base+depths.right+.002}
-      const lx=gutterInset,lz=-t/2-depths.left-.002,a=pagePivot.rotation.y
+      const from={x:-w/2+gutterInset,z:base+bindingHeight(depths.right,rightCompression)+.002}
+      const lx=gutterInset,lz=-t/2-bindingHeight(depths.left,leftCompression)-.002,a=pagePivot.rotation.y
       const to={x:pagePivot.position.x+lx*Math.cos(a)+lz*Math.sin(a),z:pagePivot.position.z-lx*Math.sin(a)+lz*Math.cos(a)}
       const anchor=anchorBetween(from,to,turnP),slot=pages.slots[i],leaf=slot.leaf
-      const right=surfaceChain(pageWidth,rightAngle,depths.right/2),left=surfaceChain(pageWidth,-leftAngle,-depths.left/2)
+      const right=boundLayer(pageWidth,depths.right,rightCompression),left=boundLayer(pageWidth,depths.left,leftCompression,-1)
       const chain=turningChain(pageWidth,turnP,current.pageCurl,right,left)
       slot.gpu.update(turnP,current.pageCurl,turn.curlAmount??0,turn.grip??0,turn.grabU??1,chain)
       if(block){pages.chunkShape.pose(chain,layout.moving);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
@@ -172,7 +173,7 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     }
     return best
   }
-  function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
+  function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2-depth*(right?rightCompression:leftCompression)+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
   return {root,hinge,pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){

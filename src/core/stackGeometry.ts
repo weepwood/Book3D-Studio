@@ -31,7 +31,7 @@ export function turningChain(width:number,p:number,flex:number,right:Chain,left:
 }
 export function createStackGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,1,2),p=g.getAttribute('position'),original=Float32Array.from(p.array)
- return {g,pose(layers:Chain[],depth:number,sign:1|-1){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],level=Math.round((z+.5)*2),s=sampleChain(layers[sign===1?level:2-level],x/w+.5);p.setXYZ(i,s.x-w/2,y,z*depth+sign*s.z)}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+ return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],level=Math.round((z+.5)*2),s=sampleChain(layers[sign===1?level:2-level],x/w+.5);p.setXYZ(i,s.x-w/2,y,z*depth+sign*(s.z-depth*clamp(compression)*(sign===1?level:2-level)/2))}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
 }
 export function poseSurface(g:T.BufferGeometry,chain:Chain,flip:boolean){
  const uv=g.getAttribute('uv'),p=g.getAttribute('position')
@@ -60,3 +60,24 @@ export function edgeTriangleCenters(g:T.BufferGeometry){
  }
  return out
 }
+
+// Independent model adaptation: bound spine compression and solve the root
+// tangent from physical layer height; preserve arc length and outer clearance.
+export function bindingCompression(open:number,coupling:number){
+ return clamp(open)*(.55+.35*clamp(coupling))
+}
+export function boundLayer(width:number,depth:number,compression:number,sign:1|-1=1):Chain{
+ const rise=Math.max(0,depth)*clamp(compression),n=33
+ const shape=(u:number)=>Math.max(0,1-stackBend(u,PRESS_STACK_PROFILE.stackCurlFrontPower))
+ let lo=0,hi=Math.PI*.47
+ const integral=(a:number)=>{let z=0;for(let i=0;i<192;i++)z+=width/192*Math.sin(a*shape((i+.5)/192));return z}
+ for(let i=0;i<22;i++){const m=(lo+hi)/2;if(integral(m)<rise)lo=m;else hi=m}
+ const a=(lo+hi)/2,fn=(u:number)=>sign*a*shape(u)
+ const positions=offsetStackProfile(width,fn,0,n),tangents=new Float64Array(n*2)
+ for(let i=0;i<n;i++){const t=fn(i/(n-1));tangents[i*2]=Math.cos(t);tangents[i*2+1]=Math.sin(t)}
+ return {width,positions,tangents}
+}
+export function boundLayers(width:number,depth:number,compression:number){
+ return [0,.5,1].map(f=>boundLayer(width,depth*f,compression))
+}
+export function bindingHeight(depth:number,compression:number){return depth*(1-clamp(compression))}

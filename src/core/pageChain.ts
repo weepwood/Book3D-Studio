@@ -45,5 +45,5 @@ export function curlTarget(mode:'drag'|'hover'|'settle',progress:number,gripU:nu
   const c=R.curl,angle=clamp(progress)*Math.PI,apex=smooth(Math.abs(Math.cos(angle))/.17),reach=1-.55*(1-clamp(gripU))
   if(mode==='hover')return c.amount*c.hoverFrac*2*reach*clamp(strength)
   if(mode==='drag')return c.amount*1.82*reach*apex*clamp(strength)
-  return c.amount*1.82*(1-smooth((progress-.6)/.3))*.84*apex*clamp(strength)
+  return c.amount*1.82*(1-smooth((progress-.6)/.3))*.84*(1+.5*(1-smooth((progress-.35)/.15)))*apex*clamp(strength)
 }
