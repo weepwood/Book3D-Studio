@@ -1,14 +1,18 @@
 import {PRESS_SCENE as R} from './referenceScene'
 import {clamp} from './pagePhysics'
 export type ReadingView={zoom:number;x:number;y:number}
-export type ReadingBounds={width:number;height:number;left:number;right:number;top:number;bottom:number;pageWidth?:number}
+export type ReadingBounds={width:number;height:number;left:number;right:number;top:number;bottom:number;pageWidth?:number;safeTop?:number;safeBottom?:number}
 export const initialReadingView=():ReadingView=>({zoom:1,x:0,y:0})
 export function panLimits(b:ReadingBounds,z:number){
  const left=b.left*z,right=b.right*z,top=b.top*z,bottom=b.bottom*z
  // If the spread fits, retain its baseline center. Otherwise constrain
  // its two edges to the viewport. Coordinates are relative to viewport center.
  const x=b.width/2,y=b.height/2
- return {minX:right-left<=b.width?0:x-right,maxX:right-left<=b.width?0:-x-left,minY:bottom-top<=b.height?0:y-bottom,maxY:bottom-top<=b.height?0:-y-top}
+ const topLimit=-y+(b.safeTop??0),bottomLimit=y-(b.safeBottom??0),fits=bottom-top<=bottomLimit-topLimit
+ const offset=b.safeTop!==undefined?(topLimit+bottomLimit-top-bottom)/2:0
+ // Fit math may leave a subpixel floating-point remainder at the reset pose.
+ const center=Math.abs(offset)<1e-9?0:offset
+ return {minX:right-left<=b.width?0:x-right,maxX:right-left<=b.width?0:-x-left,minY:fits?center:bottomLimit-bottom,maxY:fits?center:topLimit-top}
 }
 export function clampReadingView(v:ReadingView,b:ReadingBounds):ReadingView{
  const zoom=clamp(v.zoom,R.zoomMin,R.zoomMax),p=panLimits(b,zoom)
@@ -62,5 +66,5 @@ export function fitReadingBounds(b:ReadingBounds,padding=12,verticalPadding=48,c
  const safeH=Math.max(1,b.height-top-bottom)
  const zoom=R.fitFraction*Math.min(safeW/w,safeH/h)
  const x=-(b.left+b.right)*zoom/2,y=-(b.top+b.bottom)*zoom/2+(top-bottom)/2
- return {zoom,x,y,bounds:{...b,left:b.left*zoom+x,right:b.right*zoom+x,top:b.top*zoom+y,bottom:b.bottom*zoom+y,pageWidth:b.pageWidth===undefined?undefined:b.pageWidth*zoom}}
+ return {zoom,x,y,bounds:{...b,...(chrome?{safeTop:top,safeBottom:bottom}:{}),left:b.left*zoom+x,right:b.right*zoom+x,top:b.top*zoom+y,bottom:b.bottom*zoom+y,pageWidth:b.pageWidth===undefined?undefined:b.pageWidth*zoom}}
 }

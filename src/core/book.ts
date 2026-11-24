@@ -9,6 +9,7 @@ import {groupCount} from './referenceScene'
 import {sampleChain,type Chain} from './pageChain'
 import {createBindingGeometry} from './bindingGeometry'
 import {paperEdgeTexture} from './paperEdge'
+import {safeHingeZ} from './clearance'
 const texture = (canvas: HTMLCanvasElement) => {
   const t = new T.CanvasTexture(canvas)
   t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4
@@ -137,15 +138,17 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       else {const slot=pages.slots[i],leaf=slot.leaf;slot.gpu.update(turnP,current.pageCurl,turn.curlAmount??0,turn.grip??0,turn.grabU??1,chain);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
     })
   }
-  const setReading=(index:number,turns:ActiveLeaf[])=>{readingIndex=Math.min(leafCount(current),Math.max(0,index));activeTurns=turns;refreshPages()}
+  const setReading=(index:number,turns:ActiveLeaf[])=>{const next=Math.min(leafCount(current),Math.max(0,index)),changed=next!==readingIndex;readingIndex=next;activeTurns=turns;if(changed&&last>0&&last<180){const angle=last;last=-1;setOpening(angle)}else refreshPages()}
   const setDrop=(elapsed:number)=>{if(dropMs!==elapsed){dropMs=elapsed;refreshPages()}}
   const setOpening=(deg:number)=>{
     if(deg===last)return
     last=deg
     const pose=openingPose(deg,current.coverFlex,current.pageCoupling)
     hinge.rotation.y=pose.hinge
-    const flatten=easeTurn(clamp01((deg-85)/95));hinge.position.z=coverZ*(1-2*flatten)
-    pagePivot.position.copy(hinge.position);pagePivot.rotation.y=pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15
+    const flatten=easeTurn(clamp01((deg-85)/95));const pageAngle=pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15
+    const nominal=coverZ*(1-2*flatten),leftDepth=pageDepth*readingIndex/Math.max(1,leafCount(current))
+    hinge.position.z=safeHingeZ(nominal,-coverZ+t/2,pageDepth-leftDepth,leftDepth,w,pageWidth,gutterInset,t,pose.hinge,pageAngle)
+    pagePivot.position.copy(hinge.position);pagePivot.rotation.y=pageAngle
     const bindingPose={hingeX:hinge.position.x,rearZ:-coverZ,frontZ:hinge.position.z,angle:hinge.rotation.y,board:t,inset,rounded:current.spineStyle==='rounded'}
     outerBinding.pose(bindingPose);innerBindingShape.pose(bindingPose)
     // The lining is an interior component, not a second exterior spine.
@@ -180,8 +183,8 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     for(let i=0;i<activeTurns.length;i++){
       const a=activeTurns[i],slot=pages.slots[i]
       if(!slot?.leaf.visible||a.opening||a.progress<.025||a.progress>.975)continue
-      const g=slot.gpu.pickGeometry(),mat=new T.MeshBasicMaterial({side:T.DoubleSide}),proxy=new T.Mesh(g,mat);proxy.matrixWorld.copy(slot.leaf.matrixWorld)
-      const hit=ray.intersectObject(proxy,false)[0];g.dispose();mat.dispose()
+      const proxy=slot.gpu.pickMesh();proxy.matrixWorld.copy(slot.leaf.matrixWorld)
+      const hit=ray.intersectObject(proxy,false)[0]
       if(hit?.uv&&(!best||hit.distance<best.distance))best={distance:hit.distance,direction:a.direction,grip:hit.uv.y*2-1,edge:hit.uv.x,progress:activeTurns[0].progress,group:activeSpan(activeTurns),slot:i}
     }
     return best

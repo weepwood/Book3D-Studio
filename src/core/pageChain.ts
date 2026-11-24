@@ -29,8 +29,12 @@ export function sampleChain(chain:Chain,u:number){
 }
 // Analytic roll on top of the chain: integrate the tangent along the fold line,
 // map the landing coordinate back onto the chain, then lift outward only.
+// Fade the local roll out before switching its normal direction at the apex.
+// This also handles a dragged leaf crossing the midpoint with residual curl.
+export const safeRollAmount=(amount:number,progress:number)=>Math.max(0,amount)*smooth(Math.abs(progress-.5)/.055)
 export function rollPoint(chain:Chain,u:number,v:number,height:number,amount:number,grip:number,grabU=1,progress=0){
   const c=R.curl,w=chain.width,x=u*w,y=v*height,base=sampleChain(chain,u)
+  amount=safeRollAmount(amount,progress)
   if(amount<=1e-6||u<=0)return [base.x,y,base.z] as const
   const tilt=grip*c.foldTiltDeg*Math.PI/180,dx=Math.cos(tilt),dy=Math.sin(tilt)
   const xi=(x-c.pivotU*w)*dx+(y-(c.pivotV-.5)*height)*dy

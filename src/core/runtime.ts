@@ -12,6 +12,7 @@ import {newTurn,stepTurn,releaseCommit,followDrag,followRender,stepManualRelease
 import {curlTarget} from './pageChain'
 import {referenceDragProgress} from './pressReference'
 import {desiredBatch,orderedProgress,openingLeaves,activeSpan} from './pageWindow'
+import {RenderProbe} from './renderProbe'
 import {PRESS_SCENE,coverProgress,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 export class BookRuntime {
   private renderer:T.WebGLRenderer
@@ -43,6 +44,7 @@ export class BookRuntime {
   private reportedIndex=-1
   private orbitMoving=false
   private contextLost=false
+  private perf:RenderProbe|null=null
   private hoverFrame=0
   private hoverPoint:{x:number;y:number}|null=null
   private probePasses=0
@@ -79,6 +81,7 @@ export class BookRuntime {
   constructor(private host:HTMLElement,c:BookConfig,private onPageIndex?:(index:number)=>void,private onContextStatus?:(status:'lost'|'restored')=>void){
     this.config={...c};this.open=c.opening>=READ_ANGLE?180:c.opening;this.index=nextLeaf(0,c.pageIndex,leafCount(c))
     this.renderer=new T.WebGLRenderer({antialias:true,alpha:true})
+    if(new URLSearchParams(location.search).get('perf')==='1')this.perf=new RenderProbe(this.renderer.getContext() as WebGL2RenderingContext,host)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=T.PCFShadowMap
     this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.outputColorSpace=T.SRGBColorSpace
@@ -111,7 +114,7 @@ export class BookRuntime {
     this.host.addEventListener('lostpointercapture',this.readPanEnd,true)
     this.apply(c);this.onResize();this.fit()
   }
-  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
+  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
   private onResize=()=>{const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
@@ -119,6 +122,7 @@ export class BookRuntime {
   invalidate=()=>{if(!this.disposed&&!this.contextLost&&!this.frame&&!this.drawing){this.last=performance.now();this.frame=requestAnimationFrame(this.draw)}}
   private draw=(now:number)=>{
     this.frame=0;if(this.disposed||this.contextLost)return;this.drawing=true
+    this.perf?.start(now)
     const openingTarget=this.config.opening>=READ_ANGLE?180:this.config.opening
     this.orbitMoving=this.controls.enabled&&this.controls.update()
     const dt=Math.min(.25,Math.max(0,(now-this.last)/1000));this.last=now
@@ -187,8 +191,9 @@ export class BookRuntime {
     this.book.root.position.set(this.config.width/200*this.readPose,0,0).applyEuler(this.book.root.rotation)
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     this.updateReadingCamera(dt,ready)
-    this.renderer.render(this.scene,this.camera);if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
+    this.perf?.beginGpu();this.renderer.render(this.scene,this.camera);this.perf?.endGpu();if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
     if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(import.meta.env.DEV&&!this.turn&&!this.orbitReading&&!this.orbitMoving&&!this.cameraMoving&&!this.cameraPan&&this.touchMode==='idle'&&this.dropElapsed>=2000){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.readingView.zoom,this.readingView.x,this.readingView.y,this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.host.dataset.groupProbePasses=String(++this.probePasses);this.groupProbeKey=key;this.groupProbe='';this.largeGroupProbe='';const canLarge=leafCount(this.config)-this.index>6;for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const group=this.findGroup(x,y);if(group){if(!this.groupProbe)this.groupProbe=json;if(group.group>6)this.largeGroupProbe=json;if(!canLarge||this.largeGroupProbe)break}}}this.host.dataset.groupPick=this.groupProbe;this.host.dataset.largeGroupPick=this.largeGroupProbe}}
+    this.perf?.finish()
     if(this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
@@ -203,7 +208,7 @@ export class BookRuntime {
     const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged)this.readingBounds=null
     if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
-    if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c)
+    if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c);if(rebuild)this.fit(true)
   }
   switchProject(c:BookConfig){
     // A project change is not a page-turn command. Reset transient state
@@ -221,7 +226,7 @@ export class BookRuntime {
     const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;this.hovered=false;t.grip=grip;t.dragTarget=t.progress;t.grabU=grabU;this.turn=t;this.dragging=true;this.releaseGoal=null
     this.renderedHandoffFrames=0;this.host.dataset.renderedHandoffFrames='0';this.regrab=regrab;this.host.dataset.dragAccepted=regrab?'regrab':'new';this.brakeElapsed=0;const available=direction===1?leafCount(this.config)-this.index:this.index;this.groupDrag=regrab?(t.span??1)+this.followers.length:Math.max(1,Math.min(group,available));t.chunkElapsed=undefined;t.chunkGesture=true;t.dragOrigin=t.progress;if(regrab){for(const a of this.followers)a.dragOrigin=a.progress}else if(this.groupDrag>6){t.span=this.groupDrag;this.followers=[]}else{t.span=undefined;this.followers=Array.from({length:this.groupDrag-1},()=>newTurn(direction))}if((t.span??1)>1)t.chunkMotion=newChunkMotion(true,t.progress,t.chunkMotion?.lift??0,t.curlAmount||curlTarget('hover',t.progress,t.grabU,this.config.pageCorner*this.config.pageHover));this.invalidate();return true
   }
-  dragPage(progress:number,_velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.turn.grabU=grabU;this.invalidate()}}
+  dragPage(progress:number,_velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.perf?.markInput();this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.turn.grabU=grabU;this.invalidate()}}
   endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??(this.regrab?displacementPx>=5||displacementPx>-5&&t.progress>.5:releaseCommit(displacementPx));const index=accepted?nextLeaf(this.index,t.direction*this.groupDrag,leafCount(this.config)):this.index;this.dragging=false;this.regrab=false;t.velocity=0;this.releaseGoal=accepted?1:0;this.releaseIndex=index;this.groupDrag=1;this.invalidate();return index}
   private applyLight(open:number){
     const p=easeTurn(clamp01(open));if(Math.abs(p-this.readLight)<.002)return;this.readLight=p
@@ -250,9 +255,9 @@ export class BookRuntime {
     this.hovered=true;this.turn.grip=hit.grip;this.turn.grabU=hit.edge;this.invalidate()
   }
   clearPageHover(){this.hoverPoint=null;cancelAnimationFrame(this.hoverFrame);this.hoverFrame=0;if(this.turn?.preview){this.hovered=false;this.invalidate()}}
-  setReadingOrbit(enabled:boolean){this.orbitReading=enabled&&this.config.opening>=READ_ANGLE;this.clearPageHover();this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';this.cameraPan=null;if(this.orbitReading){this.readAutoFit=false;this.resetReadingCamera()}else this.fit();this.invalidate()}
-  fit(){const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.set(0,distance*.04,distance);this.controls.target.set(0,0,0);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
-  setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;this.readAutoFit=false;const d=this.camera.position.length();const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
+  setReadingOrbit(enabled:boolean){this.orbitReading=enabled&&this.config.opening>=READ_ANGLE;this.clearPageHover();this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';this.cameraPan=null;if(this.orbitReading){this.fit();this.readAutoFit=false;}else this.fit();this.invalidate()}
+  fit(preserveDirection=false){const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
+  setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){this.fit();if(view==='perspective')return;this.readAutoFit=!this.orbitReading;const d=this.camera.position.distanceTo(this.controls.target);const dir=new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001);dir.applyEuler(this.book.root.rotation).normalize();this.camera.position.copy(this.controls.target).add(dir.multiplyScalar(d));this.controls.update();this.invalidate()}
   private resetReadingCamera(){
     this.readingView=initialReadingView();this.readingTarget=initialReadingView();this.readingVelocity={zoom:0,x:0,y:0};this.readingBounds=null;this.cameraMoving=false;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
     this.readBase={zoom:1,x:0,y:0};this.camera.zoom=1;this.camera.clearViewOffset();this.camera.updateProjectionMatrix()
@@ -379,7 +384,8 @@ export class BookRuntime {
   }
   private makeRay(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height||x<b.left||x>b.right||y<b.top||y>b.bottom)return null;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray}
   private findGroup(x:number,y:number){for(const [dx,dy] of [[0,0],[-3,0],[3,0],[0,-3],[0,3],[-6,0],[6,0],[0,-6],[0,6]]){const ray=this.makeRay(x+dx,y+dy);const hit=ray&&this.book.pickGroup(ray);if(hit)return hit}return null}
-  pageHit(x:number,y:number,physical=false){const b=this.renderer.domElement.getBoundingClientRect();if(this.orbitReading||!b.width||!b.height||this.open<179.5||this.openingActive||x<b.left||x>b.right||y<b.top||y>b.bottom)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);if(physical){
+  pageHit(x:number,y:number,physical=false){const start=this.perf?performance.now():0;try{return this.pageHitInternal(x,y,physical)}finally{if(this.perf)this.perf.pick(performance.now()-start)}}
+  private pageHitInternal(x:number,y:number,physical=false){const b=this.renderer.domElement.getBoundingClientRect();if(this.orbitReading||!b.width||!b.height||this.open<179.5||this.openingActive||x<b.left||x>b.right||y<b.top||y>b.bottom)return null;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);if(physical){
       this.host.dataset.pointerPick='miss'
       let active=this.book.pickActive(ray)
       if(!active&&this.turn&&!this.turn.preview){
@@ -397,5 +403,5 @@ export class BookRuntime {
   pageSide(x:number,y:number){return this.pageHit(x,y)?.direction??null}
   hitTest(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height)return false;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray.intersectObject(this.book.root,true).length>0}
   capture(){if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');this.renderer.render(this.scene,this.camera);return this.renderer.domElement.toDataURL('image/png')}
-  dispose(){this.disposed=true;cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
+  dispose(){this.disposed=true;this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }
