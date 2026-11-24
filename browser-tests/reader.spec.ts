@@ -97,6 +97,7 @@ test('超六张整块书芯跳转',async({page},testInfo)=>{
  await expect(host).toHaveAttribute('data-page-index','12',{timeout:55000})
  await expect(host).toHaveAttribute('data-chunk-phase','idle')
  await expect(host).toHaveAttribute('data-chunk-lift','0')
+ expect(Number(await host.getAttribute('data-texture-warm-count'))).toBeGreaterThanOrEqual(2)
  await page.getByRole('button',{name:'上一页',exact:true}).evaluate((b:HTMLButtonElement)=>{for(let i=0;i<8;i++)b.click()})
  await expect(host).toHaveAttribute('data-page-target','4')
  await expect(host).toHaveAttribute('data-page-index','4',{timeout:55000})

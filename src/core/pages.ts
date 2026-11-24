@@ -72,7 +72,7 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
   }
   return texture
 }
-export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void){
+export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void,warm?:(texture:T.Texture)=>boolean){
   let config=c
   const paperMat=(side:T.Side=T.FrontSide,flip=false,shaded=true)=>{const m=new T.MeshPhongMaterial({side,shininess:PRESS_SCENE.paper.shininess,reflectivity:PRESS_SCENE.paper.reflectivity,specular:new T.Color(...PRESS_SCENE.paper.specular).multiplyScalar(PRESS_SCENE.paper.reflectivity)});if(shaded)applyPaperShading(m,flip);return m}
   const root=new T.Group(),left=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat(T.FrontSide,true)),right=new T.Mesh(new T.PlaneGeometry(w,h,48,1),paperMat())
@@ -103,7 +103,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor)keys.clear()
     config=next;chunkEdge.color.set(next.paperColor)
   }
-  function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].every(m=>!m.map?.userData.pending)}
+  function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].map(m=>!!m.map&&!m.map.userData.pending&&(!warm||warm(m.map))).every(Boolean)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)

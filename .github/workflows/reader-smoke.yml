@@ -11,6 +11,7 @@ on:
       - 'src/core/referenceScene.ts'
       - 'src/core/readingCamera.ts'
       - 'src/core/paperShading.ts'
+      - 'src/core/textureWarm.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
