@@ -126,3 +126,24 @@ test('阅读缩放、受限平移及复位后翻页',async({page},testInfo)=>{
  await expect(host).toHaveAttribute('data-read-pan','[0,0]')
  await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(host).toHaveAttribute('data-page-index','1',{timeout:55000})
 })
+
+
+test('阅读状态修改装订参数后重新适配，场景相机与方向选择一致',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'})
+ await page.goto('/')
+ const host=page.locator('.canvas-host')
+ await page.getByRole('button',{name:'打开书籍',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-ready','true')
+ const before=JSON.parse((await host.getAttribute('data-read-frame'))!).revision as number
+ const coupling=page.getByRole('spinbutton',{name:'书芯联动 数值'})
+ await coupling.fill('1');await coupling.press('Enter')
+ await expect.poll(async()=>JSON.parse((await host.getAttribute('data-read-frame'))!).revision as number).toBeGreaterThan(before)
+ const frame=JSON.parse((await host.getAttribute('data-read-frame'))!)
+ expect(frame.widthRatio).toBeLessThan(1);expect(frame.heightRatio).toBeLessThan(1)
+ const direction=page.getByRole('combobox',{name:'视口方向'})
+ await direction.selectOption('side')
+ await page.getByRole('button',{name:/场景/}).click()
+ await page.getByRole('button',{name:'适配相机'}).click()
+ await expect(direction).toHaveValue('perspective')
+ await expect(host).toHaveAttribute('data-read-zoom','1.0000')
+})

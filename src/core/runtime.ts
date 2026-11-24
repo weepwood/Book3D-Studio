@@ -39,6 +39,7 @@ export class BookRuntime {
   private readingBounds:ReadingBounds|null=null
   private readBase={zoom:1,x:0,y:0}
   private readAutoFit=true
+  private readFrameRevision=0
   private cameraMoving=false
   private touchPoints=new Map<number,{x:number;y:number}>()
   private touchMode:'idle'|'pending'|'page'|'pan'|'pinch'|'hold'='idle'
@@ -182,7 +183,7 @@ export class BookRuntime {
   }
   update(c:BookConfig){
     const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
-    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening;this.config={...c};if(frameChanged)this.readingBounds=null
+    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged)this.readingBounds=null
     if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
     if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c)
@@ -247,7 +248,7 @@ export class BookRuntime {
       const raw={width:w,height:h,left,right,top,bottom,pageWidth}
       const frame=this.readAutoFit?fitReadingBounds(raw):{zoom:1,x:0,y:0,bounds:raw}
       this.readBase={zoom:frame.zoom,x:frame.x,y:frame.y};this.readingBounds=frame.bounds;this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
-      this.host.dataset.readFrame=JSON.stringify({zoom:frame.zoom,widthRatio:(frame.bounds.right-frame.bounds.left)/w,heightRatio:(frame.bounds.bottom-frame.bounds.top)/h,viewport:[w,h]})
+      this.host.dataset.readFrame=JSON.stringify({revision:++this.readFrameRevision,zoom:frame.zoom,widthRatio:(frame.bounds.right-frame.bounds.left)/w,heightRatio:(frame.bounds.bottom-frame.bounds.top)/h,viewport:[w,h]})
     }
     if(!this.cameraPan&&this.touchMode!=='pinch'&&this.touchMode!=='pan'&&this.touchMode!=='hold'){if(this.reduced.matches){this.readingView={...this.readingTarget};this.cameraMoving=false}else this.cameraMoving=!springReading(this.readingView,this.readingVelocity,this.readingTarget,dt)}
     this.camera.zoom=this.readBase.zoom*this.readingView.zoom
