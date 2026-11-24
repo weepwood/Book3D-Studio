@@ -27,3 +27,5 @@ describe('装订收拢与外缘厚度守恒',()=>{
   }
  })
 })
+
+it('展开纸层的外缘切线平顺落地，弧长和厚度仍守恒',()=>{for(const depth of [.02,.14,.28,.55]){const width=1.53,c=bindingCompression(1,.7,width,depth),chain=boundLayer(width,depth,c);expect(chain.tangents[65]).toBeCloseTo(0,8);expect(chain.tangents[64]).toBeCloseTo(1,8);expect(bindingHeight(depth,c)+sampleChain(chain,1).z).toBeCloseTo(depth,4)}})

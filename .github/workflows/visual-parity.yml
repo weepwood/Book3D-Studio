@@ -2,6 +2,9 @@ name: Reference visual evidence
 on:
   pull_request:
     paths:
+      - 'src/core/paperEdge.ts'
+      - 'src/core/pages.ts'
+      - 'src/core/chunkMotion.ts'
       - 'scripts/visual-parity.mjs'
       - 'src/core/paperShading.ts'
       - 'src/core/stackGeometry.ts'
