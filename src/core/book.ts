@@ -138,7 +138,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
           const at=anchorBetween(layerFrom,layerTo,turnP)
           return {chain:liftChunkChain(turningChain(pageWidth,turnP,current.pageCurl,cachedLayer(dr,rightCompression),cachedLayer(dl,leftCompression,-1),readingIndex/count),lift,turnP),x:at.x-anchor.x,z:at.z-anchor.z}
         }):undefined
-        pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1});pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
+        pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+.001-anchor.z:-Infinity);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
       }
       else {const slot=pages.slots[i],leaf=slot.leaf;// Fully open boards are coplanar, and the active leaf basis has no Y rotation.
         // Keep the deformed surface above their inner face; shader and CPU picker share this floor.

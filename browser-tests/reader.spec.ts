@@ -1,3 +1,4 @@
+import {choose} from './select-helper'
 import {test,expect} from '@playwright/test'
 import {writeFile} from 'node:fs/promises'
 test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page},testInfo)=>{
@@ -142,10 +143,10 @@ test('阅读状态修改装订参数后重新适配，场景相机与方向选�
  const frame=JSON.parse((await host.getAttribute('data-read-frame'))!)
  expect(frame.widthRatio).toBeLessThan(1);expect(frame.heightRatio).toBeLessThan(1)
  const direction=page.getByRole('combobox',{name:'视口方向'})
- await direction.selectOption('side')
+ await choose(direction,'side')
  await page.getByRole('button',{name:/场景/}).click()
  await page.getByRole('button',{name:'适配相机'}).click()
- await expect(direction).toHaveValue('perspective')
+ await expect(direction).toHaveAttribute('data-value','perspective')
  await expect(host).toHaveAttribute('data-read-zoom','1.0000')
 })
 
@@ -164,7 +165,7 @@ test('设置分组重置、材质预设与跨页选择保留作品数据',async(
  await page.getByRole('button',{name:'重置翻页与纸张'}).click()
  await expect(page.getByRole('spinbutton',{name:'纸张卷曲 数值'})).toHaveValue('0.72')
  await expect(page.getByRole('spinbutton',{name:'内页数量 数值'})).toHaveValue('40')
- await page.getByRole('combobox',{name:'跳转跨页'}).selectOption('12')
+ await choose(page.getByRole('combobox',{name:'跳转跨页'}),'12')
  await expect(host).toHaveAttribute('data-page-index','12')
 })
 

@@ -1,2 +1,2 @@
 import { defineConfig } from 'vite'
-export default defineConfig({ base: './' })
+export default defineConfig({base:'./',build:{rollupOptions:{output:{manualChunks(id){if(id.includes('/node_modules/three/build/three.core.js'))return 'three-core';if(id.includes('/node_modules/three/'))return 'three-renderer';if(id.includes('/node_modules/@radix-ui/')||id.includes('/node_modules/@floating-ui/'))return 'ui-controls';if(/\/node_modules\/(react|react-dom|scheduler)\//.test(id))return 'react-runtime'}}}}})

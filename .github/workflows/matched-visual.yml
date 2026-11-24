@@ -32,15 +32,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
       - name: Prepare exact published baseline
         run: |
           git worktree add --detach /tmp/book3d-baseline 6efad6774ef1cab44b7864d2c37f9520fb23cb74
-          ln -s "$GITHUB_WORKSPACE/node_modules" /tmp/book3d-baseline/node_modules
+          cp -R "$GITHUB_WORKSPACE/node_modules" /tmp/book3d-baseline/node_modules
+          rm -rf /tmp/book3d-baseline/node_modules/.vite
+          trap 'cat /tmp/book3d-base.log /tmp/book3d-new.log' EXIT
           (cd /tmp/book3d-baseline && npm run dev -- --host 127.0.0.1 --port 4174 --strictPort) >/tmp/book3d-base.log 2>&1 &
           npm run dev -- --host 127.0.0.1 --port 4173 --strictPort >/tmp/book3d-new.log 2>&1 &
           for n in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/dev/null && curl -fsS http://127.0.0.1:4174/ >/dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:4173/ >/dev/null
+          curl -fsS http://127.0.0.1:4174/ >/dev/null
           BASELINE_URL=http://127.0.0.1:4174/ LOCAL_URL=http://127.0.0.1:4173/ node scripts/matched-visual.mjs
       - uses: actions/upload-artifact@v4
         if: always()

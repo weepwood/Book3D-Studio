@@ -1,10 +1,11 @@
+import {choose} from './select-helper'
 import {test,expect} from '@playwright/test'
 const hostSelector='.canvas-host'
 test('闭合书脊和书籍开合过程真实视觉证据',async({page},info)=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');const host=page.locator(hostSelector);await expect(host.locator('canvas')).toBeVisible({timeout:15000})
- await page.getByRole('combobox',{name:'视口方向'}).selectOption('spine');await page.screenshot({path:info.outputPath('closed-spine-rounded.png')})
- await page.getByRole('combobox',{name:'书脊形状'}).selectOption('square');await page.screenshot({path:info.outputPath('closed-spine-square.png')})
- await page.getByRole('combobox',{name:'书脊形状'}).selectOption('rounded');await page.getByRole('button',{name:'重置视角'}).click()
+ await choose(page.getByRole('combobox',{name:'视口方向'}),'spine');await page.screenshot({path:info.outputPath('closed-spine-rounded.png')})
+ await choose(page.getByRole('combobox',{name:'书脊形状'}),'square');await page.screenshot({path:info.outputPath('closed-spine-square.png')})
+ await choose(page.getByRole('combobox',{name:'书脊形状'}),'rounded');await page.getByRole('button',{name:'重置视角'}).click()
  await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','false');await expect(host).toHaveAttribute('data-opening-leaves','0');await page.screenshot({path:info.outputPath('opening-cover.png')})
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000});await page.screenshot({path:info.outputPath('open-spread.png')});expect(errors).toEqual([])
 })
@@ -18,5 +19,5 @@ test('拖动跟随、取消目标同步、实际纸面页码及旋转模式',asy
 
 
 test('快速反向及目标缩短后回到请求跨页，不锁死或继续误翻',async({page})=>{
- await page.goto('/');const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible({timeout:15000});await page.locator('.left').getByRole('button',{name:/内页/}).click();const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter');await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000});const jump=page.getByRole('combobox',{name:'跳转跨页'});await jump.selectOption('16');await expect(host).toHaveAttribute('data-page-turn','active');await jump.selectOption('2');await expect(host).toHaveAttribute('data-page-target','2');await expect(host).toHaveAttribute('data-page-index','2',{timeout:55000});await expect(host).toHaveAttribute('data-page-turn','idle');await expect(page.locator('.page-counter')).toHaveText('4–5 / 40');await page.getByRole('button',{name:'下一页',exact:true}).last().click();await expect(host).toHaveAttribute('data-page-index','3',{timeout:55000});await expect(page.locator('.page-counter')).toHaveText('6–7 / 40')
+ await page.goto('/');const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible({timeout:15000});await page.locator('.left').getByRole('button',{name:/内页/}).click();const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter');await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:15000});const jump=page.getByRole('combobox',{name:'跳转跨页'});await choose(jump,'16');await expect(host).toHaveAttribute('data-page-turn','active');await choose(jump,'2');await expect(host).toHaveAttribute('data-page-target','2');await expect(host).toHaveAttribute('data-page-index','2',{timeout:55000});await expect(host).toHaveAttribute('data-page-turn','idle');await expect(page.locator('.page-counter')).toHaveText('4–5 / 40');await page.getByRole('button',{name:'下一页',exact:true}).last().click();await expect(host).toHaveAttribute('data-page-index','3',{timeout:55000});await expect(page.locator('.page-counter')).toHaveText('6–7 / 40')
 })

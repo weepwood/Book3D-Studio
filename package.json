@@ -12,17 +12,18 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@radix-ui/react-select": "2.2.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "three": "0.174.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@types/react": "19.0.10",
     "@types/react-dom": "19.0.4",
     "@types/three": "0.174.0",
     "typescript": "5.7.3",
     "vite": "6.4.1",
-    "vitest": "3.2.4",
-    "@playwright/test": "1.56.1"
+    "vitest": "3.2.4"
   }
 }

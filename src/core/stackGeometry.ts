@@ -79,9 +79,9 @@ export function createChunkGeometry(w:number,h:number){
  const faceIndices=[4,5].map(face=>{const group=g.groups.find(x=>x.materialIndex===face)!;return Array.from(g.index!.array.slice(group.start,group.start+group.count))})
  const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
  const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number}){
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
-   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
+   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,Math.max(floor,z))}
    const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
    if(overlay){
@@ -93,7 +93,7 @@ export function createChunkGeometry(w:number,h:number){
      for(const i of new Set(faceIndices[side-4])){
        const y=original[i*3+1],u=original[i*3]/w+.5,row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),c=rows?.[row]??chain,a=sampleChain(c,u)
        const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress)
-       hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003)
+       hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],Math.max(floor,p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003))
      }
      hp.needsUpdate=true;handoff.computeVertexNormals();handoff.computeBoundingSphere();handoff.computeBoundingBox()
    }
