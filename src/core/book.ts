@@ -103,8 +103,8 @@ export function createBook(c:BookConfig, invalidate:()=>void){
     upper.visible=leftDepth>.0001;upper.position.z=-t/2-leftDepth/2
     leftDepthNow=leftDepth;rightDepthNow=rightDepth;leftCount=Math.round(leftDepth/layout.unit);rightCount=Math.round(rightDepth/layout.unit)
     const open=easeTurn(clamp01((last-90)/90)),leftDrop=gravityDrop(dropMs,0,Math.max(1,Math.min(6,leftCount))),rightDrop=gravityDrop(dropMs,0,Math.max(1,Math.min(6,rightCount)))
-    leftCompression=bindingCompression(open*leftDrop,current.pageCoupling)
-    rightCompression=bindingCompression(open*rightDrop,current.pageCoupling)
+    leftCompression=bindingCompression(open*leftDrop,current.pageCoupling,pageWidth,pageDepth)
+    rightCompression=bindingCompression(open*rightDrop,current.pageCoupling,pageWidth,pageDepth)
     const key=[leftDepth,rightDepth,leftCompression,rightCompression].join(':')
     if(key!==stackKey){
       stackKey=key;leftLayers=boundLayers(pageWidth,leftDepth,leftCompression);rightLayers=boundLayers(pageWidth,rightDepth,rightCompression)

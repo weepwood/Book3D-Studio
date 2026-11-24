@@ -63,16 +63,23 @@ export function edgeTriangleCenters(g:T.BufferGeometry){
 
 // Independent model adaptation: bound spine compression and solve the root
 // tangent from physical layer height; preserve arc length and outer clearance.
-export function bindingCompression(open:number,coupling:number){
- return clamp(open)*(.55+.35*clamp(coupling))
+const ROOT_LIMIT=Math.PI*.47
+const BINDING_STEPS=192
+const bindingShape=(u:number)=>Math.max(0,1-stackBend(u,PRESS_STACK_PROFILE.stackCurlFrontPower))
+const bindingMidpoints=Array.from({length:BINDING_STEPS},(_,i)=>bindingShape((i+.5)/BINDING_STEPS))
+function riseFraction(angle:number){let sum=0;for(const u of bindingMidpoints)sum+=Math.sin(angle*u);return sum/BINDING_STEPS}
+const maxRiseFraction=riseFraction(ROOT_LIMIT)
+// Limit compression using the entire book depth (not the current split).
+// This keeps root heights and moving/static leaf endpoints on the same scale.
+export function bindingCompression(open:number,coupling:number,width=Infinity,totalDepth=0){
+ const desired=clamp(open)*(.55+.35*clamp(coupling))
+ return totalDepth>0?Math.min(desired,Math.max(0,width)*maxRiseFraction*.98/totalDepth):desired
 }
 export function boundLayer(width:number,depth:number,compression:number,sign:1|-1=1):Chain{
  const rise=Math.max(0,depth)*clamp(compression),n=33
- const shape=(u:number)=>Math.max(0,1-stackBend(u,PRESS_STACK_PROFILE.stackCurlFrontPower))
- let lo=0,hi=Math.PI*.47
- const integral=(a:number)=>{let z=0;for(let i=0;i<192;i++)z+=width/192*Math.sin(a*shape((i+.5)/192));return z}
- for(let i=0;i<22;i++){const m=(lo+hi)/2;if(integral(m)<rise)lo=m;else hi=m}
- const a=(lo+hi)/2,fn=(u:number)=>sign*a*shape(u)
+ let lo=0,hi=ROOT_LIMIT
+ if(rise>0)for(let i=0;i<22;i++){const m=(lo+hi)/2;if(width*riseFraction(m)<rise)lo=m;else hi=m}
+ const a=rise>0?(lo+hi)/2:0,fn=(u:number)=>sign*a*bindingShape(u)
  const positions=offsetStackProfile(width,fn,0,n),tangents=new Float64Array(n*2)
  for(let i=0;i<n;i++){const t=fn(i/(n-1));tangents[i*2]=Math.cos(t);tangents[i*2+1]=Math.sin(t)}
  return {width,positions,tangents}

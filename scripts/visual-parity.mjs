@@ -41,10 +41,18 @@ await record('Stripe Press open book',async()=>{
  // Use the public button's actual activation; the carousel can move it
  // during CDP mouse dispatch in SwiftShader. The fallback is explicitly logged.
  try{const rect=await open.boundingBox();if(!rect)throw Error('No visible button bounds');await source.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2,{delay:30});diagnostics.push('activation: pointer')}catch(e){diagnostics.push('pointer activation: '+String(e).slice(0,300))}
- const closed=source.getByText(/Close book\\s*\\[-\\]/i).filter({visible:true}).first()
- try{await closed.waitFor({state:'visible',timeout:10000})}catch{
-   await open.evaluate(button=>button.click());diagnostics.push('activation fallback: public button DOM click')
-   await closed.waitFor({state:'visible',timeout:30000})
+ // The verified stable screenshot shows CLOSE BOOK [-]. Match its text
+ // literally and tolerate the UI's casing/spacing without double escapes.
+ const closed=source.getByText(/Close book\s*\[\s*-\s*\]/i).filter({visible:true}).first()
+ try{await closed.waitFor({state:'visible',timeout:15000})}catch(e){
+   diagnostics.push('close wait: '+String(e).slice(0,300))
+   if(await open.isVisible()){await open.evaluate(button=>button.click());diagnostics.push('activation fallback: public button DOM click')}
+   else diagnostics.push('open button absent after pointer; waiting for reader')
+   try{await closed.waitFor({state:'visible',timeout:30000})}catch(e){
+     await shot(source,'reference-state-unverified')
+     await writeFile(dir+'/reference-visible-text.txt',(await source.locator('body').innerText()).slice(0,5000))
+     throw e
+   }
  }
  await source.waitForTimeout(800)
  await shot(source,'reference-opening-early')
