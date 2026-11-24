@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {clampReadingView,initialReadingView,panLimits,rubber,springReading,zoomAround,touchPageAllowed,snapReadingView,pinchReading,fitReadingBounds} from '../src/core/readingCamera'
+import {clampReadingView,initialReadingView,panLimits,rubber,springReading,zoomAround,touchPageAllowed,snapReadingView,pinchReading,fitReadingBounds,fitReadingMotion} from '../src/core/readingCamera'
 const b={width:800,height:600,left:-350,right:350,top:-220,bottom:220}
 describe('阅读相机',()=>{
  it('投影适配保持完整书籍、居中且支持窄视口',()=>{for(const w of [390,800,1280]){const raw={width:w,height:650,left:-180,right:250,top:-100,bottom:150,pageWidth:215},v=fitReadingBounds(raw);expect(v.zoom).toBeGreaterThan(0);expect(v.bounds.left+v.bounds.right).toBeCloseTo(0);expect(v.bounds.top+v.bounds.bottom).toBeCloseTo(0);expect(v.bounds.right-v.bounds.left).toBeLessThanOrEqual(w*.96);expect(v.bounds.bottom-v.bounds.top).toBeLessThanOrEqual(650*.96);expect(v.bounds.pageWidth).toBeCloseTo(215*v.zoom)}})
@@ -19,3 +19,8 @@ it('短视口自动避开不对称工具栏占用的真实安全区',()=>{
 it('放大与缩小后的纵向平移边界仍避让工具栏',()=>{const f=fitReadingBounds({width:800,height:500,left:-350,right:350,top:-220,bottom:220},12,48,{top:45,bottom:90}),b=f.bounds;const z=2,p=panLimits(b,z);expect(b.bottom*z+p.minY).toBeCloseTo(250-90);expect(b.top*z+p.maxY).toBeCloseTo(-250+45);const small=clampReadingView({zoom:.5,x:0,y:999},b);expect((b.top+b.bottom)*.5/2+small.y).toBeCloseTo((45-90)/2)})
 
  it('不对称安全区复位精确归零，消除浮点残差',()=>{for(const h of [360,501,800]){const f=fitReadingBounds({width:721,height:h,left:-189.123,right:195.267,top:-145.123,bottom:122.987},12,48,{top:47.123,bottom:89.456});expect(clampReadingView({zoom:1,x:0,y:0},f.bounds)).toEqual({zoom:1,x:0,y:0})}})
+
+it('翻页运动包络在固定适配后保留安全区，且静止范围独立报告',()=>{
+ const stable={width:900,height:520,left:-280,right:280,top:-130,bottom:160,pageWidth:280},motion={left:-290,right:300,top:-310,bottom:160},chrome={top:40,bottom:80}
+ const f=fitReadingMotion(stable,motion,chrome);expect(f.bounds.top+260).toBeGreaterThanOrEqual(40);expect(f.bounds.bottom+260).toBeLessThanOrEqual(440);expect(f.motionBounds.top+260).toBeGreaterThanOrEqual(8);expect(f.motionBounds.bottom+260).toBeLessThanOrEqual(512);expect(f.stableBounds.top).toBeGreaterThan(f.motionBounds.top);expect(clampReadingView(initialReadingView(),f.bounds)).toEqual(initialReadingView())
+})

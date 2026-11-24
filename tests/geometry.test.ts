@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest'
 import * as T from 'three'
-import {boardGeometry,bookDimensions,openingPose,skinWeights,skinnedBoard,coverBoneAngles} from '../src/core/geometry'
+import {boardGeometry,bookDimensions,openingPose,skinWeights,skinnedBoard,coverBoneAngles,supportedCoverFlex} from '../src/core/geometry'
 import {parseConfig,defaults} from '../src/core/schema'
 
 describe('参数化几何',()=>{
@@ -59,3 +59,5 @@ describe('参数化几何',()=>{
     expect(()=>parseConfig({...defaults,spineStyle:'bad'})).toThrow()
   })
 })
+
+it('厚实书芯支撑盖板时连续限制自由弯曲，空封面保持原柔性',()=>{const f=-.4;expect(supportedCoverFlex(f,1,0)).toBe(f);expect(Math.abs(supportedCoverFlex(f,1,.4))).toBeCloseTo(.048);let last=Math.abs(f);for(let i=0;i<=40;i++){const n=Math.abs(supportedCoverFlex(f,1,i/100));expect(n).toBeLessThanOrEqual(last+1e-12);last=n}})

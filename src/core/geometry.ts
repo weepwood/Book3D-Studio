@@ -74,3 +74,19 @@ export function skinnedBoard(w:number,h:number,t:number,radius:number,materials:
   mesh.frustumCulled=false
   return {mesh,bones,skeleton}
 }
+
+// Keep the thick sewn block attached to the board during partial opening.
+// The original lag is allowed for thin books; thick blocks have a smaller
+// angular budget so their fore-edge cannot drift far away from the cover.
+export function coupledPageAngle(hinge:number,lagged:number,width:number,depth:number){
+ const ratio=Math.max(0,depth)/Math.max(.001,width),blend=T.MathUtils.smoothstep(ratio,.08,.42)
+ const limit=T.MathUtils.degToRad(T.MathUtils.lerp(36,2,blend))
+ return hinge+T.MathUtils.clamp(lagged-hinge,-limit,limit)
+}
+
+// A thick paper block cannot follow the same free board bending as an
+// unsupported cover. Limit deformation continuously by attached depth.
+export function supportedCoverFlex(total:number,width:number,attachedDepth:number){
+ const ratio=Math.max(0,attachedDepth)/Math.max(.001,width),support=T.MathUtils.smoothstep(ratio,.02,.28)
+ return total*(1-.88*support)
+}

@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
 import {createTextureWarmer} from './textureWarm'
 import { bookDimensions } from './geometry'
-import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,fitReadingBounds,type ReadingView,type ReadingBounds} from './readingCamera'
+import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,fitReadingMotion,type ReadingView,type ReadingBounds} from './readingCamera'
 import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newChunkMotion,regrabChunkMotion,stepChunk,chunkCanCommit} from './chunkMotion'
@@ -45,6 +45,12 @@ export class BookRuntime {
   private orbitMoving=false
   private contextLost=false
   private perf:RenderProbe|null=null
+  private meshProbeEnabled=new URLSearchParams(location.search).get('meshCollision')==='1'
+  private meshProbeAt=-Infinity
+  private meshProbeTotal={frames:0,segments:0,hits:0,byMesh:{} as Record<string,number>,byPhase:{} as Record<string,number>}
+  private frameProbeEnabled=new URLSearchParams(location.search).get('frame')==='1'
+  private frameOverflow=0
+  private frameSamples=0
   private collisionEnabled=new URLSearchParams(location.search).get('collision')==='1'
   private collisionPeak=0
   private collisionSamples=0
@@ -203,6 +209,7 @@ export class BookRuntime {
     this.perf?.beginGpu();this.renderer.render(this.scene,this.camera);this.perf?.endGpu();if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
     if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(import.meta.env.DEV&&!this.turn&&!this.orbitReading&&!this.orbitMoving&&!this.cameraMoving&&!this.cameraPan&&this.touchMode==='idle'&&this.dropElapsed>=2000){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.readingView.zoom,this.readingView.x,this.readingView.y,this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.host.dataset.groupProbePasses=String(++this.probePasses);this.groupProbeKey=key;this.groupProbe='';this.largeGroupProbe='';const canLarge=leafCount(this.config)-this.index>6;for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const group=this.findGroup(x,y);if(group){if(!this.groupProbe)this.groupProbe=json;if(group.group>6)this.largeGroupProbe=json;if(!canLarge||this.largeGroupProbe)break}}}this.host.dataset.groupPick=this.groupProbe;this.host.dataset.largeGroupPick=this.largeGroupProbe}}
     if(this.collisionEnabled&&display.length){this.openingPeak=Math.max(this.openingPeak,drop.length);const sample=this.book.collisionSample();this.collisionPeak=Math.max(this.collisionPeak,sample.crossings);this.collisionPairs+=sample.pairs;this.host.dataset.collision=JSON.stringify({...sample,peak:this.collisionPeak,openingPeak:this.openingPeak,pairsTotal:this.collisionPairs,frames:++this.collisionSamples})}
+    if(this.meshProbeEnabled&&display.length&&now-this.meshProbeAt>=120){this.meshProbeAt=now;const m=this.book.meshCollisionSample();this.meshProbeTotal.frames++;this.meshProbeTotal.segments+=m.segments;this.meshProbeTotal.hits+=m.hits;const phase=drop.length?'opening':this.turn?.span&&this.turn.span>1?'chunk':'leaf';this.meshProbeTotal.byPhase[phase]=(this.meshProbeTotal.byPhase[phase]??0)+m.hits;for(const [name,n] of Object.entries(m.byMesh))this.meshProbeTotal.byMesh[name]=(this.meshProbeTotal.byMesh[name]??0)+n;this.host.dataset.meshCollision=JSON.stringify({...this.meshProbeTotal,last:m})}
     this.perf?.finish()
     if(this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
@@ -296,9 +303,11 @@ export class BookRuntime {
       const viewport=this.host.getBoundingClientRect(),parent=this.host.parentElement
       const topBar=parent?.querySelector('.viewport-top')?.getBoundingClientRect(),bottomBar=parent?.querySelector('.viewport-bottom')?.getBoundingClientRect()
       const chrome={top:topBar?Math.max(0,topBar.bottom-viewport.top+12):48,bottom:bottomBar?Math.max(0,viewport.bottom-bottomBar.top+12):48}
-      const frame=this.readAutoFit?fitReadingBounds(raw,12,48,chrome):{zoom:1,x:0,y:0,bounds:raw}
+      const motion={left,right,top,bottom}
+      for(const point of this.book.motionFramePoints()){const p=point.project(this.camera);motion.left=Math.min(motion.left,p.x*w/2);motion.right=Math.max(motion.right,p.x*w/2);motion.top=Math.min(motion.top,-p.y*h/2);motion.bottom=Math.max(motion.bottom,-p.y*h/2)}
+      const frame=this.readAutoFit?fitReadingMotion(raw,motion,chrome):{zoom:1,x:0,y:0,bounds:raw,stableBounds:raw,motionBounds:raw}
       this.readBase={zoom:frame.zoom,x:frame.x,y:frame.y};this.readingBounds=frame.bounds;this.readingTarget=clampReadingView(this.readingTarget,this.readingBounds)
-      this.host.dataset.readFrame=JSON.stringify({revision:++this.readFrameRevision,zoom:frame.zoom,widthRatio:(frame.bounds.right-frame.bounds.left)/w,heightRatio:(frame.bounds.bottom-frame.bounds.top)/h,viewport:[w,h],bounds:frame.bounds,chrome})
+      this.host.dataset.readFrame=JSON.stringify({revision:++this.readFrameRevision,zoom:frame.zoom,widthRatio:(frame.stableBounds.right-frame.stableBounds.left)/w,heightRatio:(frame.stableBounds.bottom-frame.stableBounds.top)/h,viewport:[w,h],bounds:frame.bounds,stableBounds:frame.stableBounds,motionBounds:frame.motionBounds,chrome})
     }
     if(!this.cameraPan&&this.touchMode!=='pinch'&&this.touchMode!=='pan'&&this.touchMode!=='hold'){if(this.reduced.matches){this.readingView={...this.readingTarget};this.cameraMoving=false}else this.cameraMoving=!springReading(this.readingView,this.readingVelocity,this.readingTarget,dt)}
     this.camera.zoom=this.readBase.zoom*this.readingView.zoom
@@ -306,6 +315,7 @@ export class BookRuntime {
     if(x||y)this.camera.setViewOffset(w,h,-x,-y,w,h)
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
+    if(this.frameProbeEnabled&&this.turn&&!this.turn.preview){this.book.root.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const points=this.book.activeFramePoints();if(points.length){let overflow=0;for(const p of points){p.project(this.camera);overflow=Math.max(overflow,(Math.abs(p.x)-1)*w/2,(Math.abs(p.y)-1)*h/2)}this.frameOverflow=Math.max(this.frameOverflow,overflow);this.host.dataset.motionFrame=JSON.stringify({samples:++this.frameSamples,overflow,peakOverflow:this.frameOverflow})}}
     this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
   }
   private readWheel=(e:WheelEvent)=>{
@@ -412,6 +422,11 @@ export class BookRuntime {
     }const hit=ray.intersectObjects([...this.book.readingSurfaces],false)[0];if(!hit?.uv)return null;if(physical)this.host.dataset.pointerPick='page';const direction=hit.object===this.book.readingSurfaces[0]?-1 as const:1 as const;const mesh=hit.object;const width=bookDimensions(this.config.width,this.config.height,this.config.thickness,this.config.boardThickness,this.config.pageInset).pageWidth;const outer=mesh.localToWorld(new T.Vector3(direction===1?width/2:-width/2,0,0)).project(this.camera);const inner=mesh.localToWorld(new T.Vector3(direction===1?-width/2:width/2,0,0)).project(this.camera);return {direction,progress:0,group:1,regrab:false,grip:hit.uv.y*2-1,edge:direction===1?hit.uv.x:1-hit.uv.x,travelX:(inner.x-outer.x)*b.width/2,travelY:-(inner.y-outer.y)*b.height/2}}
   pageSide(x:number,y:number){return this.pageHit(x,y)?.direction??null}
   hitTest(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height)return false;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray.intersectObject(this.book.root,true).length>0}
-  capture(){if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');this.renderer.render(this.scene,this.camera);return this.renderer.domElement.toDataURL('image/png')}
+  zoomReading(factor:number){if(this.contextLost||this.orbitReading||this.dragging||!this.readingBounds)return;this.clearPageHover();this.readingTarget=zoomAround(this.readingTarget,this.readingTarget.zoom*factor,0,0,this.readingBounds);this.invalidate()}
+  capture(scale=1){
+    if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');const old=this.renderer.getPixelRatio(),w=this.host.clientWidth,h=this.host.clientHeight
+    if(!w||!h)throw Error('预览区域不可用');const ratio=Math.min(old*Math.max(1,Math.min(2,scale)),4096/Math.max(w,h));
+    try{this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.invalidate()}
+  }
   dispose(){this.disposed=true;this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }
