@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page})=>{
- const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/WebGLProgram|shader error|VALIDATE_STATUS/i.test(m.text()))errors.push(m.text())})
  await page.goto('/')
  await expect(page.getByText('正在读取本地项目…')).toHaveCount(0)
  const canvas=page.locator('.canvas-host canvas')
@@ -8,6 +8,7 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  const host=page.locator('.canvas-host')
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
+ await expect(host).toHaveAttribute('data-page-gpu','chain-texture')
  await page.getByRole('button',{name:'下一页',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-turn','active')
  await expect(host).toHaveAttribute('data-page-target','1')
@@ -17,6 +18,7 @@ test('真实 WebGL 工作台打开、连续前翻、后翻与关闭',async({page
  await expect(host).toHaveAttribute('data-page-target','2')
  await page.getByRole('button',{name:'下一页',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-target','3')
+ await expect(host).toHaveAttribute('data-active-leaves','2',{timeout:5000})
  await expect(host).toHaveAttribute('data-page-index','3',{timeout:55000})
  await page.getByRole('button',{name:'上一页',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-index','2',{timeout:55000})

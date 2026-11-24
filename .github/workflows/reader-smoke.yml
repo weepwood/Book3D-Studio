@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'src/core/pages.ts'
+      - 'src/core/pageGpu.ts'
+      - 'src/core/pageChain.ts'
+      - 'src/core/pageWindow.ts'
+      - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
       - 'src/core/book.ts'
       - 'src/core/runtime.ts'

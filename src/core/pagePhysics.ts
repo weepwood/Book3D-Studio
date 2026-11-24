@@ -1,7 +1,7 @@
 import {PRESS_REFERENCE as R} from './pressReference'
 export const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x))
-export type TurnState={direction:1|-1;progress:number;renderProgress:number;velocity:number;grip:number;preview:boolean;dragTarget:number}
-export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {direction,progress:0,renderProgress:0,velocity:0,grip:clamp(grip,-1,1),preview,dragTarget:0}}
+export type TurnState={direction:1|-1;progress:number;renderProgress:number;velocity:number;grip:number;preview:boolean;dragTarget:number;curlAmount:number;grabU:number}
+export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {direction,progress:0,renderProgress:0,velocity:0,grip:clamp(grip,-1,1),preview,dragTarget:0,curlAmount:0,grabU:1}}
 // Angular snap behavior observed in the reference. The editor duration remains an optional time scale.
 export function stepTurn(progress:number,velocity:number,target:number,dt:number,duration:number,queued=false){
   const frames=clamp(dt,0,.25)*R.fps*.85/Math.max(.3,duration)

@@ -64,3 +64,5 @@ GitHub Pages：在 Settings → Pages → Build and deployment 中选择 GitHub 
 翻页专项浏览器测试：安装 Chromium（`npx playwright install chromium`）后运行 `npm run test:browser`。仅核心翻页文件变化时额外触发 Reader smoke，不影响普通文档 PR。
 
 原版对齐专项：详见 [Stripe Press 对照与验收](docs/stripe-press-parity.md)。参考控制器的拖拽和吸附替代自主速度预测；未确认的局部悬停卷曲暂不模拟。原始默认参数与未完成的形变差异明确记录。
+
+V0.4.2：GPU 33×2 链纹理与同步深度形变，最多六张同向活动纸张、厚度与角度顺序约束；曲面书芯及成组抓取仍待原版对照实施。
