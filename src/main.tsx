@@ -23,6 +23,7 @@ function App(){
   const [leftWidth,setLeftWidth]=useState(190),[rightWidth,setRightWidth]=useState(276)
   const [leftOpen,setLeftOpen]=useState(true),[rightOpen,setRightOpen]=useState(true)
   const [view,setView]=useState<'front'|'back'|'side'|'spine'|'top'|'perspective'>('perspective')
+  const readingDirection=useRef<typeof view>('perspective')
   const imageKey=(face+'Image') as 'coverImage'|'backImage'|'spineImage'
   const project=ws.w.projects.find(p=>p.id===ws.w.active)!
   const [tab,setTab]=useState('模型')
@@ -36,8 +37,8 @@ function App(){
   const reading=config.opening>=READ_ANGLE,count=leafCount(config)
   const [visibleIndex,setVisibleIndex]=useState(config.pageIndex),[orbitReading,setOrbitReading]=useState(false)
   const displayIndex=Math.min(count,visibleIndex),visiblePage=displayIndex===0?'1':displayIndex===count?(config.pageCount%2===0?String(config.pageCount):'封底'):`${displayIndex*2}–${Math.min(config.pageCount,displayIndex*2+1)}`
-  const resetView=()=>{setOrbitReading(false);setView('perspective');runtime.current?.setReadingOrbit(false)}
-  const changeOrbit=()=>{pageDrag.current=null;press.current=null;const n=runtime.current?.endPageDrag(false);if(n!=null)change('pageIndex',n);runtime.current?.setReadingOrbit(!orbitReading);setOrbitReading(!orbitReading)}
+  const resetView=()=>{setOrbitReading(false);setView('perspective');runtime.current?.setReadingOrbit(false,true)}
+  const changeOrbit=()=>{pageDrag.current=null;press.current=null;const n=runtime.current?.endPageDrag(false);if(n!=null)change('pageIndex',n);if(!orbitReading)readingDirection.current=view;const restored=runtime.current?.setReadingOrbit(!orbitReading);setOrbitReading(!orbitReading);if(orbitReading)setView(restored?readingDirection.current:'perspective')}
   const turn=(direction:1|-1)=>setConfig(c=>({...c,pageIndex:nextLeaf(c.pageIndex,direction,leafCount(c))}),'pageIndex')
   const host=useRef<HTMLDivElement>(null),runtime=useRef<BookRuntime|null>(null),runtimeProject=useRef<string|null>(null),press=useRef<[number,number]|null>(null)
   const imageInput=useRef<HTMLInputElement>(null),projectInput=useRef<HTMLInputElement>(null)

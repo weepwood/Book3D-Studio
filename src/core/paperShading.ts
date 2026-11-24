@@ -12,7 +12,7 @@ export function paperShadowChunk(source:string){
 export function paperGrainAmplitude(lum:number,strength:number=R.paper.shadowGrain){const t=T.MathUtils.smoothstep(lum,.3,1.2);return Math.min((.3+.7*(1-t))*strength*.75,Math.max(0,lum)*.45)}
 export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
  const p=R.paper,side=flip?1:0
- mat.customProgramCacheKey=()=> 'book3d-paper-gutter-v3'
+ mat.customProgramCacheKey=()=> 'book3d-paper-gutter-v4'
  mat.onBeforeCompile=shader=>{
    Object.assign(shader.uniforms,{paperFlip:{value:side},paperBounce:{value:new T.Color(...p.bounceColor)},paperGrain:{value:p.shadowGrain},paperEdge:{value:new T.Vector3(p.edgeBand,p.edgeBright,p.edgeDark)}})
    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 paperUV;').replace('#include <uv_vertex>','#include <uv_vertex>\npaperUV=uv;')
@@ -53,7 +53,9 @@ export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
        vec3 noise=vec3(fract(sin(dot(pxy,vec2(17.31,87.19)))*23453.123),fract(sin(dot(pxy,vec2(43.73,19.81)))*34732.321),fract(sin(dot(pxy,vec2(79.39,53.11)))*19721.213))-.5;
        float lum=dot(outgoingLight,vec3(.2126,.7152,.0722));
        float amplitude=min((.3+.7*(1.0-smoothstep(.3,1.2,lum)))*paperGrain*.75,max(0.0,lum)*.45);
-       outgoingLight=max(vec3(0.0),outgoingLight+noise*amplitude);
+       // Paper fibre is mostly luminance variation, not RGB speckle.
+       float fibre=dot(noise,vec3(.2126,.7152,.0722));
+       outgoingLight=max(vec3(0.0),outgoingLight+mix(vec3(fibre),noise,.18)*amplitude);
        #include <opaque_fragment>
      `)
  }
