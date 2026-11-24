@@ -15,3 +15,5 @@
 |GPU render|200|0.939|1.395|
 
 单次场景、非稳定压力基准。此前软件渲染样本（相机规格重建修复前）GPU P95 326.15ms、frameGap P95 183.4ms，不能与 M4 直接作优化倍率对比。真实高分屏、Windows GPU、厚块持续抓取、多页面并行、完整硬件输入到屏幕延迟仍需测量。
+
+2026-11-25 后续连续交互测试（非上一测试同场景 A/B）：Apple M4，`BOOK3D_HARDWARE_GPU=1 npm run test:browser -- browser-tests/continuity.spec.ts`，实际659帧，最后300样本的帧间隔 P95 16.8ms、CPU frame P95 1.3ms、GPU P95 1.117ms；输入至提交10样本 P95 1.3ms，拾取2样本 P95 0.3ms。诊断同时启用 collision；117个活动页截面配对累计检查、观测峰值0；不代表全三维碰撞安全。禁止推导性能提升百分比。

@@ -29,10 +29,15 @@ export function gravityDrop(elapsedMs:number,slot:number,count:number){
 
 // The opening sequence is a separate presentation state, never a page-index
 // mutation. Reference gravityDrop timing is reused for each live leaf.
+// Opening is a decorative lift/return, not a multi-leaf turn. A single
+// representative sheet avoids the observed coplanar/crossing fan; the
+// remaining sheets stay in their static stacks. Real batch turns still use 6.
+export const OPENING_LEAF_LIMIT=1
+export const OPENING_DROP_MS=R.gravityDelayMs+R.gravityDropMs
 export function openingLeaves(index:number,count:number,elapsedMs:number):ActiveLeaf[]{
- const direction=index<count?1:-1,available=direction===1?count-index:index,n=Math.min(LIVE_LEAF_LIMIT,available)
- if(n<=0||elapsedMs>=n*R.gravityDelayMs+R.gravityDropMs)return []
- return Array.from({length:n},(_,slot)=>({direction,opening:true,progress:.5*(1-gravityDrop(elapsedMs,slot,n)),grip:0,curlAmount:0,grabU:1}))
+ const direction=index<count?1:-1,available=direction===1?count-index:index
+ if(available<=0||elapsedMs>=OPENING_DROP_MS)return []
+ return [{direction,opening:true,progress:.5*(1-gravityDrop(elapsedMs,0,OPENING_LEAF_LIMIT)),grip:0,curlAmount:0,grabU:1}]
 }
 
 export function activeSpan(leaves:ActiveLeaf[]){return leaves.reduce((n,a)=>n+Math.max(1,a.span??1),0)}
