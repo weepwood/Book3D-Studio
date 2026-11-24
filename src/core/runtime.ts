@@ -42,15 +42,28 @@ export class BookRuntime {
   private readAutoFit=true
   private orbitReading=false
   private savedReading:{position:T.Vector3;target:T.Vector3;view:ReadingView;bounds:ReadingBounds|null;base:{zoom:number;x:number;y:number}}|null=null
+  private modeTransition:{from:T.PerspectiveCamera;target:T.Vector3;elapsed:number}|null=null
+  private visualCamera=new T.PerspectiveCamera()
+  private cancelModeTransition=()=>{if(this.modeTransition){this.modeTransition=null;this.host.dataset.modeTransition='idle';this.invalidate()}}
+  private transitionCamera(dt:number){
+    const a=this.modeTransition;if(!a)return this.camera
+    a.elapsed+=dt;const t=Math.min(1,a.elapsed/.24);if(t===1){this.cancelModeTransition();return this.camera}
+    const e=t*t*(3-2*t),from=a.from.position.clone().sub(a.target),to=this.camera.position.clone().sub(this.controls.target),v=this.visualCamera
+    const q=new T.Quaternion().setFromUnitVectors(from.clone().normalize(),to.clone().normalize()),dir=from.clone().normalize().applyQuaternion(new T.Quaternion().slerp(q,e))
+    v.copy(this.camera);v.position.copy(a.target).lerp(this.controls.target,e).addScaledVector(dir,T.MathUtils.lerp(from.length(),to.length(),e));v.quaternion.copy(a.from.quaternion).slerp(this.camera.quaternion,e)
+    const p=v.projectionMatrix.elements;for(let i=0;i<16;i++)p[i]=T.MathUtils.lerp(a.from.projectionMatrix.elements[i],this.camera.projectionMatrix.elements[i],e)
+    v.projectionMatrixInverse.copy(v.projectionMatrix).invert();v.updateMatrixWorld(true);return v
+  }
   private orbitTransition:{from:T.Vector3;to:T.Vector3;elapsed:number}|null=null
   private cancelOrbitTransition=()=>{this.orbitTransition=null;this.host.dataset.orbitTransition='idle'}
   private reportedIndex=-1
   private orbitMoving=false
   private contextLost=false
   private perf:RenderProbe|null=null
-  private meshProbeEnabled=new URLSearchParams(location.search).get('meshCollision')==='1'
+  private meshProbeMode=new URLSearchParams(location.search).get('meshCollision')
+  private meshProbeEnabled=this.meshProbeMode==='1'||this.meshProbeMode==='2'
   private meshProbeAt=-Infinity
-  private meshProbeTotal={frames:0,segments:0,hits:0,byMesh:{} as Record<string,number>,byPhase:{} as Record<string,number>}
+  private meshProbeTotal={frames:0,segments:0,hits:0,byMesh:{} as Record<string,number>,byPhase:{} as Record<string,number>,examples:[] as unknown[]}
   private frameProbeEnabled=new URLSearchParams(location.search).get('frame')==='1'
   private frameOverflow=0
   private frameSamples=0
@@ -109,7 +122,7 @@ export class BookRuntime {
     this.camera.position.set(3,2,5)
     this.controls=new OrbitControls(this.camera,this.renderer.domElement)
     this.controls.enablePan=true;this.controls.minDistance=2;this.controls.maxDistance=15;this.controls.enableDamping=true;this.controls.dampingFactor=.12;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.zoomToCursor=true
-    this.controls.addEventListener('change',this.invalidate);this.controls.addEventListener('start',this.cancelOrbitTransition)
+    this.controls.addEventListener('change',this.invalidate);this.controls.addEventListener('start',this.cancelOrbitTransition);this.controls.addEventListener('start',this.cancelModeTransition)
     this.light.position.set(-3,5,5);this.light.castShadow=true
     const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.light.shadow.mapSize.set(size,size)
     Object.assign(this.light.shadow.camera,{left:-5,right:5,top:5,bottom:-5,far:20})
@@ -129,12 +142,13 @@ export class BookRuntime {
     this.apply(c);this.onResize();this.fit()
   }
   cancelInteraction(){
+    this.cancelModeTransition();
     const index=this.endPageDrag(false);this.clearPageHover();this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
     if(this.readingBounds)this.readingTarget=clampReadingView(this.readingView,this.readingBounds);this.invalidate();return index
   }
   private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
-  private onResize=()=>{const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
+  private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
   private leave=()=>{this.clearPageHover();if(this.config.opening>=READ_ANGLE)return;this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch),T.MathUtils.degToRad(this.config.yaw),0);this.invalidate()}
   invalidate=()=>{if(!this.disposed&&!this.contextLost&&!this.frame&&!this.drawing){this.last=performance.now();this.frame=requestAnimationFrame(this.draw)}}
@@ -210,12 +224,12 @@ export class BookRuntime {
     this.book.root.position.set(this.config.width/200*this.readPose,0,0).applyEuler(this.book.root.rotation)
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     this.updateReadingCamera(dt,ready)
-    this.perf?.beginGpu();this.renderer.render(this.scene,this.camera);this.perf?.endGpu();if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
+    const shown=this.transitionCamera(dt);this.perf?.beginGpu();this.renderer.render(this.scene,shown);this.perf?.endGpu();if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
     if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(import.meta.env.DEV&&!this.turn&&!this.orbitReading&&!this.orbitMoving&&!this.cameraMoving&&!this.cameraPan&&this.touchMode==='idle'&&this.dropElapsed>=2000){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.readingView.zoom,this.readingView.x,this.readingView.y,this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.host.dataset.groupProbePasses=String(++this.probePasses);this.groupProbeKey=key;this.groupProbe='';this.largeGroupProbe='';const canLarge=leafCount(this.config)-this.index>6;for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const group=this.findGroup(x,y);if(group){if(!this.groupProbe)this.groupProbe=json;if(group.group>6)this.largeGroupProbe=json;if(!canLarge||this.largeGroupProbe)break}}}this.host.dataset.groupPick=this.groupProbe;this.host.dataset.largeGroupPick=this.largeGroupProbe}}
     if(this.collisionEnabled&&display.length){this.openingPeak=Math.max(this.openingPeak,drop.length);const sample=this.book.collisionSample();this.collisionPeak=Math.max(this.collisionPeak,sample.crossings);this.collisionPairs+=sample.pairs;this.host.dataset.collision=JSON.stringify({...sample,peak:this.collisionPeak,openingPeak:this.openingPeak,pairsTotal:this.collisionPairs,frames:++this.collisionSamples})}
-    if(this.meshProbeEnabled&&display.length&&now-this.meshProbeAt>=120){this.meshProbeAt=now;const m=this.book.meshCollisionSample();this.meshProbeTotal.frames++;this.meshProbeTotal.segments+=m.segments;this.meshProbeTotal.hits+=m.hits;const phase=drop.length?'opening':this.turn?.span&&this.turn.span>1?'chunk':'leaf';this.meshProbeTotal.byPhase[phase]=(this.meshProbeTotal.byPhase[phase]??0)+m.hits;for(const [name,n] of Object.entries(m.byMesh))this.meshProbeTotal.byMesh[name]=(this.meshProbeTotal.byMesh[name]??0)+n;this.host.dataset.meshCollision=JSON.stringify({...this.meshProbeTotal,last:m})}
+    if(this.meshProbeEnabled&&display.length&&now-this.meshProbeAt>=120){this.meshProbeAt=now;const m=this.book.meshCollisionSample(this.meshProbeMode==='2');this.meshProbeTotal.frames++;this.meshProbeTotal.segments+=m.segments;this.meshProbeTotal.hits+=m.hits;const phase=drop.length?'opening':this.turn?.span&&this.turn.span>1?'chunk':'leaf';this.meshProbeTotal.byPhase[phase]=(this.meshProbeTotal.byPhase[phase]??0)+m.hits;for(const [name,n] of Object.entries(m.byMesh))this.meshProbeTotal.byMesh[name]=(this.meshProbeTotal.byMesh[name]??0)+n;if(m.examples.length&&this.meshProbeTotal.examples.length<40)this.meshProbeTotal.examples.push(...m.examples.slice(0,40-this.meshProbeTotal.examples.length));this.host.dataset.meshCollision=JSON.stringify({...this.meshProbeTotal,last:m})}
     this.perf?.finish()
-    if(this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
+    if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
     this.scene.background=new T.Color(c.background);this.readLight=-1;this.applyLight(this.open/180)
@@ -226,7 +240,7 @@ export class BookRuntime {
   update(c:BookConfig){
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
     const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
-    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged){this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
+    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged){this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
     if(rebuild){this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
     if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c);if(rebuild)this.fit(true)
@@ -277,12 +291,12 @@ export class BookRuntime {
   }
   clearPageHover(){this.hoverPoint=null;cancelAnimationFrame(this.hoverFrame);this.hoverFrame=0;if(this.turn?.preview){this.hovered=false;this.invalidate()}}
   setReadingOrbit(enabled:boolean,reset=false){
-    const was=this.orbitReading,next=enabled&&this.config.opening>=READ_ANGLE,restored=was&&!next&&!reset&&!!this.savedReading;this.cancelOrbitTransition();this.clearPageHover();this.cameraPan=null
+    const was=this.orbitReading,next=enabled&&this.config.opening>=READ_ANGLE,restored=was&&!next&&!reset&&!!this.savedReading;const previous=(this.modeTransition?this.visualCamera:this.camera).clone(),previousTarget=this.controls.target.clone();this.cancelModeTransition();this.cancelOrbitTransition();this.clearPageHover();this.cameraPan=null
     if(next&&!was){this.savedReading={position:this.camera.position.clone(),target:this.controls.target.clone(),view:{...this.readingTarget},bounds:this.readingBounds?{...this.readingBounds}:null,base:{...this.readBase}};this.orbitReading=true;this.fit(true);this.readAutoFit=false}
     else if(!next){const saved=was&&!reset?this.savedReading:null;this.orbitReading=false;this.fit();if(saved){this.camera.position.copy(saved.position);this.controls.target.copy(saved.target);this.controls.update();this.readingView={...saved.view};this.readingTarget={...saved.view};if(saved.bounds&&saved.bounds.width===this.host.clientWidth&&saved.bounds.height===this.host.clientHeight){this.readingBounds=saved.bounds;this.readBase=saved.base}}this.savedReading=null}
-    this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';this.invalidate();return restored
+    this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';if(was!==next&&!reset&&!this.reduced.matches){this.modeTransition={from:previous,target:previousTarget,elapsed:0};this.host.dataset.modeTransition='active'}this.invalidate();return restored
   }
-  fit(preserveDirection=false){this.cancelOrbitTransition();const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.controls.minDistance=Math.max(.3,radius*.85);this.controls.maxTargetRadius=radius*1.5;this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.cursor.copy(this.controls.target);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
+  fit(preserveDirection=false){this.cancelModeTransition();this.cancelOrbitTransition();const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.controls.minDistance=Math.max(.3,radius*.85);this.controls.maxTargetRadius=radius*1.5;this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.cursor.copy(this.controls.target);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
   setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){
     const animated=this.orbitReading&&!this.reduced.matches;const previous=this.camera.position.clone().sub(this.controls.target);this.fit();const d=this.camera.position.distanceTo(this.controls.target);const dir=view==='perspective'?new T.Vector3(0,.04,1):new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001).applyEuler(this.book.root.rotation);dir.normalize();this.readAutoFit=!this.orbitReading
     if(animated&&previous.lengthSq()>1e-8){this.camera.position.copy(this.controls.target).add(previous);this.controls.update();this.orbitTransition={from:previous,to:dir.multiplyScalar(d),elapsed:0};this.host.dataset.orbitTransition='active'}else{this.camera.position.copy(this.controls.target).add(dir.multiplyScalar(d));this.controls.update()}
@@ -332,6 +346,7 @@ export class BookRuntime {
     this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
   }
   private readWheel=(e:WheelEvent)=>{
+    this.cancelModeTransition();
     if(this.orbitReading||this.config.opening<READ_ANGLE||this.openingActive||!this.readingBounds||this.dragging)return
     e.preventDefault();this.clearPageHover()
     const b=this.host.getBoundingClientRect(),scale=e.deltaMode===1?16:e.deltaMode===2?b.height:1
@@ -341,6 +356,7 @@ export class BookRuntime {
     this.invalidate()
   }
   private readPanStart=(e:PointerEvent)=>{
+    this.cancelModeTransition();
     if(this.orbitReading||this.config.opening<READ_ANGLE||!this.readingBounds||this.dragging||!(e.button===1||e.button===2||e.button===0&&e.altKey))return
     e.preventDefault();e.stopPropagation();this.clearPageHover()
     this.cameraPan={id:e.pointerId,x:e.clientX,y:e.clientY,start:{...this.readingView}};this.readingTarget={...this.readingView};this.readingVelocity={zoom:0,x:0,y:0};this.host.setPointerCapture(e.pointerId)
@@ -437,6 +453,7 @@ export class BookRuntime {
   hitTest(x:number,y:number){const b=this.renderer.domElement.getBoundingClientRect();if(!b.width||!b.height)return false;this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-b.left)/b.width*2-1,-(y-b.top)/b.height*2+1),this.camera);return ray.intersectObject(this.book.root,true).length>0}
   zoomReading(factor:number){if(this.contextLost||this.orbitReading||this.dragging||!this.readingBounds)return;this.clearPageHover();this.readingTarget=zoomAround(this.readingTarget,this.readingTarget.zoom*factor,0,0,this.readingBounds);this.invalidate()}
   capture(scale=1,transparent=false,longEdge?:number){
+    this.cancelModeTransition();
     if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');const old=this.renderer.getPixelRatio(),w=this.host.clientWidth,h=this.host.clientHeight
     if(!w||!h)throw Error('预览区域不可用');const longest=Math.max(w,h),ratio=longEdge!==undefined&&Number.isFinite(longEdge)?Math.max(256,Math.min(4096,Math.round(longEdge)))/longest:Math.min(old*Math.max(1,Math.min(2,scale)),4096/longest);
     const background=this.scene.background,floorVisible=this.floor.visible;

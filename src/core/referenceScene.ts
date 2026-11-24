@@ -24,4 +24,4 @@ export function isBrakeable(progress:number){const a=clamp(progress)*Math.PI;ret
 // Source screenshot stable open: fore-edge at the bottom is visible and the
 // spread is trapezoidal. Our original independent XY cover needs more tilt
 // than its former -10 degree reading pose; not an original model-space angle.
-export const READING_POSE_ADAPTER={pitchOffset:-36,yawOffset:28} as const
+export const READING_POSE_ADAPTER={pitchOffset:-40,yawOffset:28} as const

@@ -24,6 +24,7 @@ export function useWorkspace(){
   function setNotice(notice:string){setState(s=>({...s,notice}))}
   function commitImport(projectId:string,operation:ImportEdit){setState(s=>{const result=resolveImport(s.h,s.w.active,projectId,operation);return {...s,notice:result.notice,h:result.h,w:result.h===s.h?s.w:saveProject(s.w,s.w.active,result.h.present)}})}
   function addAsset(a:Asset,key:'coverImage'|'backImage'|'spineImage',projectId:string){setState(s=>{const w={...s.w,assets:[...s.w.assets,a]};if(s.w.active!==projectId)return {...s,w,notice:'素材已加入本地库；项目已切换，未应用到当前作品。'};const h=edit(s.h,{...s.h.present,[key]:a.data});return {...s,h,w:saveProject(w,w.active,h.present),notice:'素材已加入本地库'}})}
+  function addAssets(assets:Asset[]){if(!assets.length)return;setState(s=>({...s,w:{...s.w,assets:[...s.w.assets,...assets]},notice:`已导入 ${assets.length} 张素材，当前书籍保持不变`}))}
   function deleteAsset(id:string){setState(s=>({...s,w:{...s.w,assets:s.w.assets.filter(a=>a.id!==id)}}))}
-  return {notice:state.notice??'',setNotice,commitImport,config:state.h.present,w:state.w,ready,saved:state.w===savedWorkspace,storageError,setConfig,undo:()=>apply(undo),redo:()=>apply(redo),canUndo:state.h.past.length>0,canRedo:state.h.future.length>0,select,create,remove,rename,addAsset,deleteAsset}
+  return {notice:state.notice??'',setNotice,commitImport,config:state.h.present,w:state.w,ready,saved:state.w===savedWorkspace,storageError,setConfig,undo:()=>apply(undo),redo:()=>apply(redo),canUndo:state.h.past.length>0,canRedo:state.h.future.length>0,select,create,remove,rename,addAsset,addAssets,deleteAsset}
 }
