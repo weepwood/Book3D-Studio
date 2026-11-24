@@ -74,3 +74,12 @@ export function skinnedBoard(w:number,h:number,t:number,radius:number,materials:
   mesh.frustumCulled=false
   return {mesh,bones,skeleton}
 }
+
+// Keep the thick sewn block attached to the board during partial opening.
+// The original lag is allowed for thin books; thick blocks have a smaller
+// angular budget so their fore-edge cannot drift far away from the cover.
+export function coupledPageAngle(hinge:number,lagged:number,width:number,depth:number){
+ const ratio=Math.max(0,depth)/Math.max(.001,width),blend=T.MathUtils.smoothstep(ratio,.08,.42)
+ const limit=T.MathUtils.degToRad(T.MathUtils.lerp(36,8,blend))
+ return hinge+T.MathUtils.clamp(lagged-hinge,-limit,limit)
+}

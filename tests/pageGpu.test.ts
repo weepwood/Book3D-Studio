@@ -10,3 +10,5 @@ describe('GPU 链纹理及活动页窗口',()=>{
 })
 
 it('实际拾取代理按姿态刷新且复用网格与材质',()=>{const g=createGpuPage(1.5,2);const a=g.pickMesh();const before=a.geometry.getAttribute('position').getZ(48);g.update(.3,.7,1,.2,1);const b=g.pickMesh();expect(b).toBe(a);expect(b.geometry.getAttribute('position').getZ(48)).not.toBe(before);expect(g.pickMesh()).toBe(a);g.dispose()})
+
+it('活动纸页的 CPU 拾取与几何代理保留共同的封面间距',()=>{const gpu=createGpuPage(1.5,2);gpu.update(.95,.7,4,.8,1,undefined,.15);for(let i=0;i<=16;i++)for(const v of [-.5,0,.5])expect(gpu.pickPoint(i/16,v).z).toBeGreaterThanOrEqual(.15);const g=gpu.pickGeometry(),p=g.getAttribute('position');for(let i=0;i<p.count;i++)expect(p.getZ(i)).toBeGreaterThanOrEqual(.15-1e-6);g.dispose();gpu.dispose()})

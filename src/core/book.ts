@@ -1,6 +1,6 @@
 import * as T from 'three'
 import type { BookConfig } from './schema'
-import { bookDimensions, openingPose, skinnedBoard, coverBoneAngles, BONE_COUNT } from './geometry'
+import { bookDimensions, openingPose, coupledPageAngle, skinnedBoard, coverBoneAngles, BONE_COUNT } from './geometry'
 import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
 import {anchorBetween} from './pagePhysics'
 import {batchLayout,leafDepths,gravityDrop,activeSpan,chunkDepths,type ActiveLeaf} from './pageWindow'
@@ -140,7 +140,9 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
         }):undefined
         pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1});pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
       }
-      else {const slot=pages.slots[i],leaf=slot.leaf;slot.gpu.update(turnP,current.pageCurl,turn.curlAmount??0,turn.grip??0,turn.grabU??1,chain);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
+      else {const slot=pages.slots[i],leaf=slot.leaf;// Fully open boards are coplanar, and the active leaf basis has no Y rotation.
+        // Keep the deformed surface above their inner face; shader and CPU picker share this floor.
+        const floor=last===180?base+.001-anchor.z:-1e6;slot.gpu.update(turnP,current.pageCurl,turn.curlAmount??0,turn.grip??0,turn.grabU??1,chain,floor);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
     })
   }
   const setReading=(index:number,turns:ActiveLeaf[])=>{const next=Math.min(leafCount(current),Math.max(0,index)),changed=next!==readingIndex;readingIndex=next;activeTurns=turns;if(changed&&last>0&&last<180){const angle=last;last=-1;setOpening(angle)}else refreshPages()}
@@ -150,7 +152,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     last=deg
     const pose=openingPose(deg,current.coverFlex,current.pageCoupling)
     hinge.rotation.y=pose.hinge
-    const flatten=easeTurn(clamp01((deg-85)/95));const pageAngle=pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15
+    const flatten=easeTurn(clamp01((deg-85)/95));const pageAngle=coupledPageAngle(pose.hinge,pose.hinge*(.65+.35*flatten)+pose.page*(1-flatten)*.15,pageWidth,pageDepth)
     const nominal=coverZ*(1-2*flatten),leftDepth=pageDepth*readingIndex/Math.max(1,leafCount(current))
     hinge.position.z=safeHingeZ(nominal,-coverZ+t/2,pageDepth-leftDepth,leftDepth,w,pageWidth,gutterInset,t,pose.hinge,pageAngle)
     pagePivot.position.copy(hinge.position);pagePivot.rotation.y=pageAngle
@@ -198,6 +200,19 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       }else{const slot=pages.slots[i];if(!slot?.leaf.visible)continue;for(let u=0;u<=16;u++)for(const v of [-.5,0,.5])points.push(slot.leaf.localToWorld(slot.gpu.pickPoint(u/16,v)))}
     }return points
   }
+  // Optional diagnostic: intersect selected deformed page segments with the
+  // actual cover/stack meshes using Three's world-space raycaster. Sample
+  // both directions to include back-face hits. Not a complete triangle test.
+  function meshCollisionSample(){
+    root.updateMatrixWorld(true);rig.skeleton.update();rearRig.skeleton.update()
+    const obstacles=[back,rig.mesh,lower,upper].filter(m=>m.visible),ray=new T.Raycaster(),epsilon=.0008
+    let segments=0,hits=0;const byMesh:Record<string,number>={}
+    const scan=(a:T.Vector3,b:T.Vector3)=>{const dir=b.clone().sub(a),length=dir.length();if(length<=2*epsilon)return;segments++;dir.divideScalar(length);ray.near=epsilon;ray.far=length-epsilon;const found=new Set<string>();for(const [point,sign] of [[a,1],[b,-1]] as const){ray.set(point,dir.clone().multiplyScalar(sign));for(const hit of ray.intersectObjects(obstacles,false))found.add(hit.object.name)}for(const name of found){hits++;byMesh[name]=(byMesh[name]??0)+1}}
+    for(const [i,turn] of activeTurns.entries()){
+      if((turn.span??1)>1){const m=pages.chunk;if(!m.visible)continue;const pos=m.geometry.getAttribute('position'),idx=m.geometry.index;if(!idx)continue;for(const g of m.geometry.groups){if(g.materialIndex!==4&&g.materialIndex!==5)continue;for(let k=g.start;k+2<g.start+g.count;k+=48){const a=m.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k))),b=m.localToWorld(new T.Vector3().fromBufferAttribute(pos,idx.getX(k+1)));scan(a,b)}}
+      }else{const slot=pages.slots[i];if(!slot?.leaf.visible)continue;for(const v of [-.4,0,.4]){let a=slot.leaf.localToWorld(slot.gpu.pickPoint(.0625,v));for(let j=2;j<=16;j++){const b=slot.leaf.localToWorld(slot.gpu.pickPoint(j/16,v));scan(a,b);a=b}}}
+    }return {segments,hits,byMesh}
+  }
   function collisionSample(){
     // Three fixed height slices, 33 samples along each live leaf. The CPU
     // pickPoint follows the GPU deformation, including local corner roll.
@@ -232,7 +247,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,layers=right?rightLayers:leftLayers,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0)return null;const point=mesh.worldToLocal(hit.point.clone()),u=Math.max(0,Math.min(1,point.x/pageWidth+.5)),top=(right?1:-1)*(depth/2-depth*(right?rightCompression:leftCompression)+sampleChain(layers[2],u).z),bottom=(right?1:-1)*(-depth/2+sampleChain(layers[0],u).z);const countPicked=groupCount(count,Math.abs((top-point.z)/(top-bottom)));return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,collisionSample,motionFramePoints,activeFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,collisionSample,meshCollisionSample,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()
