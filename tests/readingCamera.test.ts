@@ -17,3 +17,5 @@ it('短视口自动避开不对称工具栏占用的真实安全区',()=>{
 })
 
 it('放大与缩小后的纵向平移边界仍避让工具栏',()=>{const f=fitReadingBounds({width:800,height:500,left:-350,right:350,top:-220,bottom:220},12,48,{top:45,bottom:90}),b=f.bounds;const z=2,p=panLimits(b,z);expect(b.bottom*z+p.minY).toBeCloseTo(250-90);expect(b.top*z+p.maxY).toBeCloseTo(-250+45);const small=clampReadingView({zoom:.5,x:0,y:999},b);expect((b.top+b.bottom)*.5/2+small.y).toBeCloseTo((45-90)/2)})
+
+ it('不对称安全区复位精确归零，消除浮点残差',()=>{for(const h of [360,501,800]){const f=fitReadingBounds({width:721,height:h,left:-189.123,right:195.267,top:-145.123,bottom:122.987},12,48,{top:47.123,bottom:89.456});expect(clampReadingView({zoom:1,x:0,y:0},f.bounds)).toEqual({zoom:1,x:0,y:0})}})
