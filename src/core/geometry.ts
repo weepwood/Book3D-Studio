@@ -12,9 +12,9 @@ export function bookDimensions(width:number,height:number,thickness:number,board
   return {w,h,d,t,inset,pageWidth:w-2*inset,pageHeight:h-2*inset,pageDepth:d-2*t,coverZ:(d-t)/2}
 }
 export function openingPose(degrees:number,flex:number,coupling:number){
-  const open=T.MathUtils.clamp(degrees,0,150)
+  const open=T.MathUtils.clamp(degrees,0,180)
   const angle=T.MathUtils.degToRad(open)
-  const flexAngle=T.MathUtils.degToRad(24)*T.MathUtils.clamp(flex,0,1)*Math.sin(angle/2)/(BONE_COUNT-1)
+  const flexAngle=T.MathUtils.degToRad(24)*T.MathUtils.clamp(flex,0,1)*Math.sin(angle)/(BONE_COUNT-1)
   const pageAngle=T.MathUtils.degToRad(Math.min(open*.24,18))*T.MathUtils.clamp(coupling,0,1)
   return {hinge:-angle,bone:-flexAngle,page:-pageAngle}
 }
