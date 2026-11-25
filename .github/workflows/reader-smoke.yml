@@ -4,6 +4,9 @@ on:
     paths:
       - 'src/core/paperEdge.ts'
       - 'src/core/sheetCollision.ts'
+      - 'src/core/triangleContact.ts'
+      - 'src/core/meshContacts.ts'
+      - 'src/core/contactCorrection.ts'
       - 'src/core/clearance.ts'
       - 'src/core/renderProbe.ts'
       - 'src/editor/**'
@@ -55,6 +58,24 @@ jobs:
         if: always()
         with:
           name: reader-test-results
+          path: test-results/
+          if-no-files-found: ignore
+
+  triangle-contact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: triangle-contact-results
           path: test-results/
           if-no-files-found: ignore
 
