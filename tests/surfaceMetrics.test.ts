@@ -52,3 +52,40 @@ it('窄幅高书斜卷曲根部约束降低完整纸面应变，零卷曲姿态�
  page.update(.02,.72,0,1,1,c,-.08,true);expect(Array.from(page.pickMesh().geometry.getAttribute('position').array)).toEqual(before)
  page.dispose()
 })
+
+import {contactClearanceEnvelope,chunkEndpointWeight,stackHeightSampler,bindingCompression,liftChunkChain} from '../src/core/stackGeometry'
+it('接触包络保持根部及原始最低清距，抑制前口清距突变',()=>{
+ const original=new Float64Array([0,0,0,.12,.12,0,0,0]),lifts=original.slice()
+ contactClearanceEnvelope(lifts,8,1,.02,.1,1)
+ expect(lifts[0]).toBe(0)
+ for(let i=0;i<lifts.length;i++)expect(lifts[i]).toBeGreaterThanOrEqual(original[i])
+ expect(lifts[5]).toBeGreaterThan(0)
+ const end=original.slice();contactClearanceEnvelope(end,8,1,.02,.1,0);expect(end).toEqual(original)
+})
+it('窄幅厚块前口固定姿态的接触应变显著下降',()=>{
+ const w=.86,h=3.12,d=.65,p=.025,c=bindingCompression(1,.7,w,d*2),r=boundLayer(w,d,c),l=boundLayer(w,d,c,-1)
+ const g=createChunkGeometry(w,h),chain=liftChunkChain(turningChain(w,p,.72,r,l),.02,p,true),weight=chunkEndpointWeight(p)
+ const layers=[0,.5,1].map(q=>({chain:turningChain(w,p,.72,boundLayer(w,d*q,c),boundLayer(w,d*(1-q),c,-1)),x:0,z:(q-.5)*d}))
+ const sampler=stackHeightSampler(r,0,-.08,1)
+ g.pose(chain,d,undefined,layers,weight,undefined,-.08,sampler,.001,true)
+ const before=Math.max(...[4,5].map(f=>measureSurface(g.g,w,h,f).maxAreaError))
+ g.pose(chain,d,undefined,layers,weight,undefined,-.08,sampler,.001,true,false,false,true)
+ const after=Math.max(...[4,5].map(f=>measureSurface(g.g,w,h,f).maxAreaError))
+ expect(after).toBeLessThan(before);expect(after).toBeLessThan(.5)
+ const pos=g.g.getAttribute('position')
+ for(let i=0;i<pos.count;i++)expect(pos.getZ(i)+1e-7).toBeGreaterThanOrEqual(Math.max(-.08,sampler(pos.getX(i))))
+ for(const p of [0,1]){
+  const a=turningChain(w,p,.72,r,l)
+  g.pose(a,d,undefined,layers,1,undefined,-.08,sampler,.001,true);const exact=Array.from(pos.array)
+  g.pose(a,d,undefined,layers,1,undefined,-.08,sampler,.001,true,false,false,true);expect(Array.from(pos.array)).toEqual(exact)
+ }
+ g.g.dispose();g.handoff.dispose()
+})
+
+import {contactEnvelopeStrength} from '../src/core/stackGeometry'
+it('接触包络在精确交接处连续衰减且快速达到完整强度',()=>{
+ expect(contactEnvelopeStrength(1)).toBe(0)
+ expect(contactEnvelopeStrength(1-1e-6)).toBeLessThan(1e-8)
+ expect(contactEnvelopeStrength(chunkEndpointWeight(.025))).toBe(1)
+ for(let i=0;i<100;i++)expect(contactEnvelopeStrength(i/100)).toBeGreaterThanOrEqual(contactEnvelopeStrength((i+1)/100))
+})

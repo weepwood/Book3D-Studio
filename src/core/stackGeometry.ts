@@ -115,6 +115,25 @@ export function spreadClearance(lifts:Float64Array,cols:number,rows:number,dx:nu
  }
  for(let i=0;i<lifts.length;i++)lifts[i]+=(proposed[i]-lifts[i])*strength
 }
+// Root-compatible clearance envelope. Propagate a required lift across
+// adjacent material columns, but cap *extra* lift by the available distance
+// from the fixed root. Original contact requirements always take precedence.
+// Saturate early enough to address edge spikes, but continuously release
+// the extra displacement at exact handoff (zero value and slope).
+export function contactEnvelopeStrength(weight:number){const t=clamp((1-weight)*16);return t*t*(3-2*t)}
+export function contactClearanceEnvelope(lifts:Float64Array,cols:number,rows:number,dx:number,dy:number,strength:number){
+ if(strength<=0)return
+ const proposed=lifts.slice()
+ spreadClearance(proposed,cols,rows,dx,dy,1)
+ const slope=.45
+ for(let r=0;r<rows;r++){
+  const root=lifts[r*cols]
+  for(let c=1;c<cols;c++){
+   const k=r*cols+c,extra=Math.max(0,Math.min(proposed[k],root+c*dx*slope)-lifts[k])
+   lifts[k]+=extra*strength
+  }
+ }
+}
 export type ChunkLayer={chain:Chain;x:number;z:number}
 export function createChunkGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),baseUV=Float32Array.from(uv.array),normal=g.getAttribute('normal')
@@ -126,7 +145,7 @@ export function createChunkGeometry(w:number,h:number){
    const key=Math.min(i,j)+':'+Math.max(i,j);if(seenEdges.has(key))continue;seenEdges.add(key)
    const rest=Math.hypot(original[i*3]-original[j*3],original[i*3+1]-original[j*3+1]);if(rest>1e-8)materialEdges.push({i,j,rest})
  }return materialEdges};const columns=materialColumns(original,w),rowIndices=Uint8Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS));let lastRepeat=NaN,layerSolver:ReturnType<typeof createLayerSolver>|null=null,layerKeys:Int32Array|null=null
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number,slidingLayers=false,elasticSections=false,independentLayers=false){
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number,slidingLayers=false,elasticSections=false,independentLayers=false,contactEnvelope=false){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
    const samples=(rows??[chain]).map(c=>columns.u.map(u=>sampleChain(c,u))),layerSamples=layers?.map(l=>columns.u.map(u=>sampleChain(l.chain,u)))
    // A loose stack bends through layer slip rather than stretching the outer
@@ -136,7 +155,7 @@ export function createChunkGeometry(w:number,h:number){
    for(let i=0;i<p.count;i++){const y=original[i*3+1],row=rowIndices[i],col=columns.indices[i],a=samples[rows?row:0][col],off=original[i*3+2]*depth,offsetNormal=slipNormals?.[rows?row:0]??a;let x=a.x-offsetNormal.tz*off,z=a.z+offsetNormal.tx*off;const layerIndex=Math.round((original[i*3+2]+.5)*2),layer=layers?.[layerIndex];if(layer){const p=layerSamples![layerIndex][col];x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
    // Translate complete material cross-sections rather than clipping only
    // the bottom vertices. Preserve local thickness while clearing the stack.
-   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}if(slidingLayers){const minimum=elasticSections?(minimumScratch??=new Float64Array(lifts.length)):null;if(minimum)minimum.set(lifts);spreadClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,1-weight)
+   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}if(slidingLayers){const minimum=elasticSections?(minimumScratch??=new Float64Array(lifts.length)):null;if(minimum)minimum.set(lifts);if(contactEnvelope)contactClearanceEnvelope(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,contactEnvelopeStrength(weight));else spreadClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,1-weight)
       if(minimum&&weight<1){const topology=getMaterialEdges(),edges=sectionEdges??=topology.map(({i,j,rest})=>({a:liftKeys[i],b:liftKeys[j],dx:0,dy:0,dz:0,rest}))
         for(let k=0;k<edges.length;k++){const {i,j}=topology[k],edge=edges[k];edge.dx=p.getX(j)-p.getX(i);edge.dy=p.getY(j)-p.getY(i);edge.dz=p.getZ(j)-p.getZ(i)}
         solveSectionClearance(lifts,minimum,edges,49,1-weight,6,sectionWorkspace??=createSectionWorkspace(lifts.length))}
