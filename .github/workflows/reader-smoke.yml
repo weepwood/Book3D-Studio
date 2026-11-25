@@ -14,6 +14,8 @@ on:
       - 'src/core/contactWorkerProtocol.ts'
       - 'src/core/clearance.ts'
       - 'src/core/renderProbe.ts'
+      - 'src/core/renderBudget.ts'
+      - 'src/core/programWarm.ts'
       - 'src/editor/**'
       - 'src/core/workspace.ts'
       - 'src/core/schema.ts'
@@ -134,7 +136,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts browser-tests/handoff-budget.spec.ts browser-tests/material-engine.spec.ts browser-tests/resource-stability.spec.ts browser-tests/chunk-endpoints.spec.ts browser-tests/texture-composite.spec.ts browser-tests/handoff-surface.spec.ts browser-tests/hd-texture.spec.ts browser-tests/shared-face.spec.ts
+      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts browser-tests/handoff-budget.spec.ts browser-tests/material-engine.spec.ts browser-tests/resource-stability.spec.ts browser-tests/chunk-endpoints.spec.ts browser-tests/texture-composite.spec.ts browser-tests/handoff-surface.spec.ts browser-tests/hd-texture.spec.ts browser-tests/shared-face.spec.ts browser-tests/shadow-cache.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

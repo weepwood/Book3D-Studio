@@ -17,6 +17,8 @@ import {referenceDragProgress} from './pressReference'
 import {TurnInput,releaseGesture,gestureIntent} from './turnInput'
 import {desiredBatch,orderedProgress,openingLeaves,OPENING_DROP_MS,STACK_SETTLE_MS,activeSpan} from './pageWindow'
 import {RenderProbe} from './renderProbe'
+import {RenderBudget} from './renderBudget'
+import {observePrograms} from './programWarm'
 import {PRESS_SCENE,coverProgress,presentationStep,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 const SETTLED_DROP=PRESS_SCENE.openDelayMs+STACK_SETTLE_MS
 export class BookRuntime {
@@ -26,10 +28,22 @@ export class BookRuntime {
   private geometryRevision=1
   // Opt-in experiment until device measurements establish a safe default.
   private shaderWarmEnabled=new URLSearchParams(location.search).get('prewarm')==='1'
+  private renderBudget=new RenderBudget()
+  private adaptiveRendering=new URLSearchParams(location.search).get('renderBudget')==='1'
+  private warmDrawEnabled=new URLSearchParams(location.search).get('warmDraw')==='1'
+  private shadowCacheEnabled=new URLSearchParams(location.search).get('shadowCache')!=='0'
+  private shadowDirty=true
+  private shadowRevision=-1
+  private shadowPasses=0
+  private shadowReuses=0
+  private appliedBudget=0
+  private fullShadowSize=2048
+  private warmDrawTarget:T.WebGLRenderTarget|null=null
+  private cancelProgramProbe:(()=>void)|null=null
   private readingWarmDone=false
   private readingWarmHandle:number|null=null
   private shaderWarmHandle:number|null=null
-  private cancelShaderWarm(){if(this.readingWarmHandle!==null){window.cancelIdleCallback(this.readingWarmHandle);this.readingWarmHandle=null}if(this.shaderWarmHandle!==null){window.cancelIdleCallback(this.shaderWarmHandle);this.shaderWarmHandle=null}}
+  private cancelShaderWarm(){this.cancelProgramProbe?.();this.cancelProgramProbe=null;if(this.readingWarmHandle!==null){window.cancelIdleCallback(this.readingWarmHandle);this.readingWarmHandle=null}if(this.shaderWarmHandle!==null){window.cancelIdleCallback(this.shaderWarmHandle);this.shaderWarmHandle=null}}
   private scheduleShaderWarm(){
     if(!this.shaderWarmEnabled||typeof window.requestIdleCallback!=='function'||this.disposed||this.contextLost)return
     this.cancelShaderWarm()
@@ -58,6 +72,24 @@ export class BookRuntime {
         // shadow draw may still instantiate a driver-specific variant.
         this.renderer.compile(new T.Mesh(representative.fm.geometry,representative.gpu.depth),this.camera,this.scene)
         this.readingWarmDone=true;this.host.dataset.readingWarm='submitted';this.host.dataset.readingWarmMs=String(performance.now()-start)
+        if(this.warmDrawEnabled){
+          // Actual shadow/material draw, but an offscreen target has its own
+          // output-color/tone-mapping variant. Never claim full screen readiness.
+          const target=this.warmDrawTarget??=new T.WebGLRenderTarget(64,64)
+          const oldTarget=this.renderer.getRenderTarget(),visible=representative.leaf.visible
+          const oldCast=representative.fm.castShadow
+          try{
+            representative.leaf.visible=true;representative.fm.castShadow=true
+            this.renderer.setRenderTarget(target);this.renderer.render(this.scene,this.camera)
+            this.host.dataset.readingWarm='offscreen-drawn'
+            this.host.dataset.readingWarmDrawMs=String(performance.now()-start)
+          }finally{representative.leaf.visible=visible;representative.fm.castShadow=oldCast;this.renderer.setRenderTarget(oldTarget);this.light.shadow.needsUpdate=true;this.shadowDirty=true;target.dispose();this.warmDrawTarget=null}
+        }
+        if(this.perf){
+          this.cancelProgramProbe?.()
+          const programs=(this.renderer.info.programs??[]).map(p=>(p as unknown as {program:WebGLProgram}).program).filter(Boolean)
+          this.cancelProgramProbe=observePrograms(this.renderer.getContext() as WebGL2RenderingContext,programs,state=>{this.host.dataset.programWarm=state})
+        }
       }catch{this.readingWarmDone=true;this.host.dataset.readingWarm='failed'}
     })
   }
@@ -191,7 +223,7 @@ export class BookRuntime {
     this.controls.enablePan=true;this.controls.minDistance=2;this.controls.maxDistance=15;this.controls.enableDamping=true;this.controls.dampingFactor=.12;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.zoomToCursor=true
     this.controls.addEventListener('change',this.invalidate);this.controls.addEventListener('start',this.cancelOrbitTransition);this.controls.addEventListener('start',this.cancelModeTransition)
     this.light.position.set(-3,5,5);this.light.castShadow=true
-    const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.light.shadow.mapSize.set(size,size)
+    const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.fullShadowSize=size;this.light.shadow.mapSize.set(size,size)
     Object.assign(this.light.shadow.camera,{left:-5,right:5,top:5,bottom:-5,far:20})
     this.scene.add(this.light,this.fill,this.ambient)
     this.floor=new T.Mesh(new T.PlaneGeometry(30,30),new T.ShadowMaterial({opacity:.20}))
@@ -221,6 +253,14 @@ export class BookRuntime {
   }
   private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.firstCommandAt=null;this.firstCommandContext=null;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.cancelShaderWarm();this.book.suspendTextureWork();this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
+  private applyRenderBudget(level:number){
+    if(this.appliedBudget===level)return
+    this.appliedBudget=level;this.shadowDirty=true
+    const ratio=Math.min(window.devicePixelRatio,2)*[1,.75,.5][level],size=Math.min(this.fullShadowSize,[this.fullShadowSize,1024,512][level])
+    this.renderer.setPixelRatio(ratio)
+    this.light.shadow.mapSize.set(size,size);this.light.shadow.map?.setSize(size,size);this.light.shadow.needsUpdate=true
+    this.host.dataset.renderBudget=JSON.stringify({level,ratio,shadowSize:size})
+  }
   private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
   private leave=()=>{this.clearPageHover();if(this.config.opening>=READ_ANGLE)return;this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch),T.MathUtils.degToRad(this.config.yaw),0);this.invalidate()}
@@ -312,7 +352,23 @@ export class BookRuntime {
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     if(this.meshProbeMode==='4'&&(display.length||this.coverMotion)&&now-this.meshProbeAt>=500){this.meshProbeAt=now;this.host.dataset.triangleCorrection=JSON.stringify(this.book.resolveTriangleContacts())}
     this.updateReadingCamera(cameraDt,ready)
-    const shown=this.transitionCamera(dt);this.perf?.phase('camera');this.perf?.beginGpu();const firstRender=this.startupProbe?performance.now():0;this.renderer.render(this.scene,shown);this.perf?.endGpu();
+    const shown=this.transitionCamera(dt)
+    const moving=!!this.turn&&!this.turn.preview||!!this.coverMotion||drop.length>0
+    if(this.adaptiveRendering)this.applyRenderBudget(moving?this.renderBudget.level:0)
+    this.perf?.phase('camera')
+    // The settled book's world-space shadow is independent of camera zoom/pan.
+    // Refresh on every moving pose, geometry revision, light/appearance edit,
+    // final landing frame, or warm/export pass. Never reuse for a moving leaf.
+    const shadowRevision=this.book.geometryMetrics().refreshCount
+    const shadowReuse=this.shadowCacheEnabled&&ready&&!this.turn&&!display.length&&!this.coverMotion&&this.dropElapsed>=SETTLED_DROP&&!this.shadowDirty&&shadowRevision===this.shadowRevision&&!!this.light.shadow.map
+    this.renderer.shadowMap.autoUpdate=!shadowReuse
+    this.perf?.beginGpu();const renderStart=performance.now(),firstRender=this.startupProbe?renderStart:0
+    try{this.renderer.render(this.scene,shown)}finally{this.renderer.shadowMap.autoUpdate=true}
+    this.perf?.endGpu()
+    if(shadowReuse)this.shadowReuses++;else this.shadowPasses++
+    this.shadowRevision=shadowRevision;this.shadowDirty=false
+    if(this.perf)this.host.dataset.shadowCache=JSON.stringify({passes:this.shadowPasses,reuses:this.shadowReuses,reused:shadowReuse,revision:shadowRevision})
+    if(this.adaptiveRendering){this.renderBudget.observe(performance.now()-renderStart,elapsed*1000,moving);this.host.dataset.renderBudget=JSON.stringify({level:this.appliedBudget,ratio:this.renderer.getPixelRatio(),shadowSize:this.light.shadow.mapSize.x})}
     if(drop.length){this.readingWarmDone=true;this.host.dataset.readingWarm='opening-draw'}else if(ready&&!this.turn&&this.index===target)this.scheduleReadingWarm();
     this.perf?.phase('render')
     if(this.firstCommandAt!==null&&!drop.length&&display.some(t=>t.progress>.002)){
@@ -359,7 +415,7 @@ export class BookRuntime {
     if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<SETTLED_DROP||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
-    this.scene.background=new T.Color(c.background);this.readLight=-1;this.applyLight(this.open/180)
+    this.shadowDirty=true;this.scene.background=new T.Color(c.background);this.readLight=-1;this.applyLight(this.open/180)
     this.book.root.rotation.set(T.MathUtils.degToRad(c.pitch),T.MathUtils.degToRad(c.yaw),0)
     this.floor.position.y=-c.height/200-.22;if(c.opening<READ_ANGLE){this.orbitReading=false;this.savedReading=null;this.cancelOrbitTransition()}this.controls.enabled=c.opening>=READ_ANGLE?this.orbitReading:c.interaction!=='hover'
     this.invalidate()
@@ -369,10 +425,11 @@ export class BookRuntime {
     const index=nextLeaf(this.config.pageIndex,direction,leafCount(this.config))
     if(index===this.config.pageIndex)return index
     if(this.readingWarmHandle!==null){window.cancelIdleCallback(this.readingWarmHandle);this.readingWarmHandle=null}
+    if(this.cancelProgramProbe){this.cancelProgramProbe();this.cancelProgramProbe=null;if(this.host.dataset.programWarm==='pending')this.host.dataset.programWarm='interrupted'}
     const now=performance.now()
     if(this.perf&&(!this.turn||this.turn.preview)&&this.firstCommandAt===null){
       const textures=this.book.textureMetrics()
-      this.firstCommandAt=now;this.firstCommandContext={direction,index:this.index,target:index,warm:this.host.dataset.readingWarm??'none',pendingTextures:textures.pendingTextures,misses:textures.misses,slots:textures.slots,decodeActive:textures.decode.active,decodeQueued:textures.decode.queued}
+      this.firstCommandAt=now;this.firstCommandContext={direction,index:this.index,target:index,warm:this.host.dataset.readingWarm??'none',programWarm:this.host.dataset.programWarm??'none',pendingTextures:textures.pendingTextures,misses:textures.misses,slots:textures.slots,decodeActive:textures.decode.active,decodeQueued:textures.decode.queued}
     }
     this.input.push(direction,now);this.perf?.markInput()
     this.releaseGoal=null;this.releaseIndex=null;this.config={...this.config,pageIndex:index}
@@ -390,7 +447,7 @@ export class BookRuntime {
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
     const keys=['width','height','boardThickness','cornerRadius','pageInset','spineStyle'] as const
     const rebuild=keys.some(k=>this.config[k]!==c[k]);const shapeChanged=(["paperPhysics","paperThickness","paperGrammage","paperModulus","paperDamping","pageCurl","pageCorner","pageCount","coverFlex","pageCoupling"] as const).some(k=>this.config[k]!==c[k]);const depthChanged=physicalBook(this.config).thickness!==physicalBook(c).thickness;const frameChanged=rebuild||depthChanged||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged||shapeChanged)this.resetHandoffProbes();if(frameChanged){this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
-    if(rebuild){this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
+    if(rebuild){this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.programWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
     if(rebuild||depthChanged||shapeChanged){this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality}
     if((depthChanged||shapeChanged)&&!rebuild){this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';delete this.host.dataset.workerCollision}
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
@@ -399,7 +456,7 @@ export class BookRuntime {
   switchProject(c:BookConfig){
     // A project change is not a page-turn command. Reset transient state
     // before applying the new model, while retaining the WebGL renderer.
-    this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
+    this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(0);this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
     this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
     this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
     this.savedReading=null;this.cancelOrbitTransition();this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
@@ -425,7 +482,7 @@ export class BookRuntime {
     return this.requestTurn(direction)
   }
   private applyLight(open:number){
-    const p=easeTurn(clamp01(open));if(Math.abs(p-this.readLight)<.002)return;this.readLight=p
+    const p=easeTurn(clamp01(open));if(Math.abs(p-this.readLight)<.002)return;this.readLight=p;this.shadowDirty=true
     const a=PRESS_SCENE.browse,b=PRESS_SCENE.read,mix=(x:number,y:number)=>x+(y-x)*p,scale=this.config.width/100/PRESS_SCENE.sourceWidth
     const color=(x:number,y:number)=>new T.Color(x).lerp(new T.Color(y),p)
     this.light.color.copy(color(a.keyColor,b.keyColor));this.light.intensity=mix(a.keyIntensity,b.keyIntensity)*this.config.light/3
@@ -615,10 +672,10 @@ export class BookRuntime {
   zoomReading(factor:number){if(this.contextLost||this.orbitReading||this.dragging||!this.readingBounds)return;this.clearPageHover();this.readingTarget=zoomAround(this.readingTarget,this.readingTarget.zoom*factor,0,0,this.readingBounds);this.invalidate()}
   capture(scale=1,transparent=false,longEdge?:number){
     this.cancelModeTransition();
-    if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');const old=this.renderer.getPixelRatio(),w=this.host.clientWidth,h=this.host.clientHeight
-    if(!w||!h)throw Error('预览区域不可用');const longest=Math.max(w,h),ratio=longEdge!==undefined&&Number.isFinite(longEdge)?Math.max(256,Math.min(4096,Math.round(longEdge)))/longest:Math.min(old*Math.max(1,Math.min(2,scale)),4096/longest);
+    if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');const w=this.host.clientWidth,h=this.host.clientHeight
+    if(!w||!h)throw Error('预览区域不可用');const previousBudget=this.appliedBudget;this.applyRenderBudget(0);const old=this.renderer.getPixelRatio(),longest=Math.max(w,h),ratio=longEdge!==undefined&&Number.isFinite(longEdge)?Math.max(256,Math.min(4096,Math.round(longEdge)))/longest:Math.min(old*Math.max(1,Math.min(2,scale)),4096/longest);
     const background=this.scene.background,floorVisible=this.floor.visible;
-    try{if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.invalidate()}
+    try{this.shadowDirty=true;this.renderer.shadowMap.autoUpdate=true;if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.applyRenderBudget(previousBudget);this.invalidate()}
   }
-  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
+  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.warmDrawTarget?.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }
