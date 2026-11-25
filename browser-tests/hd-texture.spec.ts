@@ -2,7 +2,8 @@ import {test,expect} from '@playwright/test'
 import {writeFile} from 'node:fs/promises'
 
 test('高清正反纸面共享解码、预取上传、代际取消及正确像素',async({page},info)=>{
- await page.goto('/')
+ // Exercise the independent-map compatibility path to isolate bitmap LRU.
+ await page.goto('/?sharedFaces=0')
  const result=await page.evaluate(async()=>{
   const pp='/src/core/pages.ts',sp='/src/core/schema.ts',tp='/src/core/textureWarm.ts',bp='/src/core/book.ts'
   const {createPageLayer}=await import(pp),{parseConfig}=await import(sp),{createTextureWarmer}=await import(tp),{disposeTree}=await import(bp)
@@ -82,8 +83,14 @@ test('真实高清书籍冷启动、固定坐标连续输入及图片资源循�
  const next=page.getByRole('button',{name:'下一页',exact:true}),previous=page.getByRole('button',{name:'上一页',exact:true})
  const start=await page.evaluate(()=>performance.now())
  await next.click();await idle(1)
- const first=await host.evaluate(el=>{const d=(el as HTMLElement).dataset;return {at:performance.now(),motion:JSON.parse(d.firstMotion??'[]'),perf:JSON.parse(d.perf!),cache:JSON.parse(d.textureCache!)}})
- const cycles=process.env.BOOK3D_HARDWARE_GPU==='1'?3:1,checkpoints=[]
+ const first=await host.evaluate(el=>{const d=(el as HTMLElement).dataset;return {at:performance.now(),motion:JSON.parse(d.firstMotion??'[]'),trace:JSON.parse(d.firstMotionTrace??'[]'),perf:JSON.parse(d.perf!),cache:JSON.parse(d.textureCache!)}})
+ expect(first.trace.length).toBeGreaterThan(0)
+ expect(first.trace[0].request.target).toBe(1);expect(first.trace[0].submit.renderProgress).toBeGreaterThan(.002)
+ expect(first.trace[0].firstMotionFrame.phases.render).toBeGreaterThanOrEqual(0)
+ const extended=process.env.BOOK3D_LONG_STRESS==='1'
+ const cycles=extended?12:process.env.BOOK3D_HARDWARE_GPU==='1'?3:1,checkpoints=[]
+ if(extended)test.setTimeout(240000)
+ const cdp=await page.context().newCDPSession(page);await cdp.send('Performance.enable')
  for(let cycle=0;cycle<cycles;cycle++){
   for(const [button,goal] of [[next,11],[previous,1]] as const){
    const b=(await button.boundingBox())!;for(let i=0;i<10;i++){await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForTimeout(80)}
@@ -92,10 +99,49 @@ test('真实高清书籍冷启动、固定坐标连续输入及图片资源循�
   await expect.poll(async()=>{const c=JSON.parse((await host.getAttribute('data-texture-cache'))!);return c.pendingTextures+c.decode.active+c.decode.queued+c.warmQueued},{timeout:20000}).toBe(0)
   const d=await host.evaluate(el=>{const d=(el as HTMLElement).dataset;return {cache:JSON.parse(d.textureCache!),resources:JSON.parse(d.renderResources!),perf:JSON.parse(d.perf!),motion:JSON.parse(d.firstMotion??'[]')}})
   expect(d.cache.estimatedBytes).toBeLessThanOrEqual(d.cache.budgetBytes);expect(d.cache.decode.peakActive).toBeLessThanOrEqual(2);expect(d.cache.failedTextures).toBe(0);expect(d.cache.decode.deliveryFailed).toBe(0);expect(d.cache.decode.cacheBytes).toBeLessThanOrEqual(d.cache.decode.cacheBudget);expect(d.cache.decode.cacheHits).toBeGreaterThan(0)
-  checkpoints.push(d)
+  await cdp.send('HeapProfiler.collectGarbage')
+  const metrics=Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]))
+  checkpoints.push({...d,heapBytes:metrics.JSHeapUsedSize})
  }
  if(checkpoints.length>1){const initial=checkpoints[0].resources;for(const point of checkpoints.slice(1)){expect(point.resources.geometries).toBeLessThanOrEqual(initial.geometries+2);expect(point.resources.textures).toBeLessThanOrEqual(initial.textures+2);expect(point.resources.programs).toBeLessThanOrEqual(initial.programs+2)}}
  expect(Number(await host.getAttribute('data-peak-chunk-leaves'))).toBe(0);expect(errors).toEqual([])
  await writeFile(info.outputPath('hd-reading.json'),JSON.stringify({first:{...first,elapsedMs:first.at-start},cycles,sourceBytes:config.pageImages.reduce((n,s)=>n+s.length,0),checkpoints,renderer:await host.getAttribute('data-perf-renderer')},null,2))
  await page.screenshot({path:info.outputPath('hd-reading.png')})
+})
+
+// Hold delivery of real decoded images. This tests resource independence,
+// not a claim that the browser naturally stalls this long on a cold load.
+test('直接阅读的高清解码延迟不阻塞首次输入且恢复不改变页码',async({page},info)=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
+ await page.addInitScript(()=>{
+  const images=Array.from({length:8},(_,i)=>{
+   const c=document.createElement('canvas');c.width=2048;c.height=3072
+   const g=c.getContext('2d')!;g.fillStyle='hsl('+i*40+' 50% 60%)';g.fillRect(0,0,c.width,c.height);return c.toDataURL('image/jpeg',.88)
+  })
+  localStorage.setItem('book3d.config',JSON.stringify({version:1,width:150,height:220,pageCount:8,pageIndex:0,opening:180,pageDuration:.85,paperPhysics:'material',thicknessMode:'automatic',pageImages:images,pageBleed:.1}))
+  const original=HTMLImageElement.prototype.decode
+  let release!:()=>void
+  const gate=new Promise<void>(resolve=>release=resolve)
+  Object.assign(window,{releasePageDecode:release})
+  HTMLImageElement.prototype.decode=async function(){await original.call(this);if(this.src.startsWith('data:image/'))await gate}
+ })
+ await page.goto('/?perf=1')
+ const host=page.locator('.canvas-host')
+ await expect(host).toHaveAttribute('data-page-ready','true',{timeout:30000})
+ await expect.poll(async()=>JSON.parse((await host.getAttribute('data-texture-cache'))!).pendingTextures).toBeGreaterThan(0)
+ await page.getByRole('button',{name:'下一页',exact:true}).click()
+ await expect(host).toHaveAttribute('data-page-index','1',{timeout:30000})
+ await expect(host).toHaveAttribute('data-page-turn','idle')
+ const trace=JSON.parse((await host.getAttribute('data-first-motion-trace'))!)
+ expect(trace[0].request.pendingTextures).toBeGreaterThan(0)
+ expect(trace[0].submit.pendingTextures).toBeGreaterThan(0)
+ expect(trace[0].submit.renderProgress).toBeGreaterThan(.002)
+ await page.evaluate(()=>(window as unknown as {releasePageDecode:()=>void}).releasePageDecode())
+ await expect.poll(async()=>{const c=JSON.parse((await host.getAttribute('data-texture-cache'))!);return c.pendingTextures+c.decode.active+c.decode.queued+c.warmQueued},{timeout:20000}).toBe(0)
+ await expect(host).toHaveAttribute('data-page-index','1')
+ await expect(host).toHaveAttribute('data-page-turn','idle')
+ expect(errors).toEqual([])
+ const cache=JSON.parse((await host.getAttribute('data-texture-cache'))!)
+ expect(cache.failedTextures).toBe(0)
+ await writeFile(info.outputPath('delayed-decode-first-input.json'),JSON.stringify({trace,cache,renderer:await host.getAttribute('data-perf-renderer')},null,2))
 })

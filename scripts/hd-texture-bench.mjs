@@ -20,7 +20,13 @@ try{
    page.on('pageerror',e=>errors.push(e.message))
    await page.addInitScript(()=>{
     const descriptor=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src')
-    window.__hdRequests=0
+    window.__hdRequests=0;window.__workspacePuts=[]
+    const originalPut=IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put=function(...args){
+     const start=performance.now()
+     try{return Reflect.apply(originalPut,this,args)}
+     finally{if(this.name==='workspace'&&args[1]==='current')window.__workspacePuts.push(performance.now()-start)}
+    }
     Object.defineProperty(HTMLImageElement.prototype,'src',{...descriptor,set(value){if(typeof value==='string'&&value.startsWith('data:image/'))window.__hdRequests++;descriptor.set.call(this,value)}})
    })
    await page.goto(urls[variant]+'/?perf=1')
@@ -41,7 +47,7 @@ try{
    await measure('forward',11,async()=>{for(let i=0;i<10;i++){const b=await next.boundingBox();await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForTimeout(80)}})
    await measure('reverse',1,async()=>{for(let i=0;i<10;i++){const b=await prev.boundingBox();await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForTimeout(80)}})
    await page.waitForTimeout(500)
-   const end=await page.evaluate(()=>({requests:window.__hdRequests,cache:JSON.parse(document.querySelector('.canvas-host').dataset.textureCache)}))
+   const end=await page.evaluate(()=>({requests:window.__hdRequests,workspacePuts:window.__workspacePuts,cache:JSON.parse(document.querySelector('.canvas-host').dataset.textureCache)}))
    result.push({round,variant:variant?'candidate':'baseline',openMs:opened-open,runs,end,errors})
   }finally{await context.close()}
  }

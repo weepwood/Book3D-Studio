@@ -11,6 +11,7 @@ export class RenderProbe {
  private add(key:string,n:number){if(!Number.isFinite(n)||n<0)return;const a=this.samples[key];a.push(n);if(a.length>limit)a.shift()}
  start(now:number){this.started=performance.now();this.phaseAt=this.started;this.phases={};if(this.last&&now-this.last<500)this.add('frameGap',now-this.last);this.last=now;this.collect()}
  phase(name:string){const now=performance.now();this.phases[name]=now-this.phaseAt;this.phaseAt=now}
+ frameSnapshot(){return {startedAt:this.started,elapsedMs:performance.now()-this.started,phases:{...this.phases}}}
  markInput(){this.input=performance.now()}
  pick(ms:number){this.add('cpuPick',ms)}
  beginGpu(){if(!this.ext||this.pending.length>=4)return;this.active=this.gl.createQuery();if(this.active)this.gl.beginQuery(this.ext.TIME_ELAPSED_EXT,this.active)}

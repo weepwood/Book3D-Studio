@@ -119,6 +119,11 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   const blank=paperMat();blank.color.set(c.paperColor)
   const handoff=new T.Mesh(chunkShape.handoff,chunkFront);handoff.name='Chunk handoff leaf';handoff.visible=false;handoff.castShadow=handoff.receiveShadow=true;handoff.frustumCulled=false;chunk.add(handoff)
   const keys=new Map<T.MeshPhongMaterial,string>(),materials=new Set<T.MeshPhongMaterial>()
+  const sharedFaces=new URLSearchParams(location.search).get('sharedFaces')!=='0'
+  const directionalPrefetch=new URLSearchParams(location.search).get('directionalPrefetch')!=='0'
+  const aliases=new Map<T.Texture,T.Texture>(),canonical=new WeakMap<T.Texture,T.Texture>()
+  let aliasHits=0,lastDirection:1|-1=1
+  const faceKey=(index:number,flip=false)=>generation+':'+index+':'+(sharedFaces?false:flip)
   const cache=new Map<string,{texture:T.Texture;bytes:number}>();let generation=0,hits=0,misses=0,evictions=0,estimatedBytes=0,peakEstimatedBytes=0
   const placeholder=new T.DataTexture(new Uint8Array([255,255,255,255]),1,1);placeholder.colorSpace=T.SRGBColorSpace;placeholder.needsUpdate=true
   const capacity=24
@@ -145,20 +150,37 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     warmNative=typeof window.requestIdleCallback==='function'
     warmIdle=warmNative?window.requestIdleCallback(run):window.setTimeout(()=>run(),32)
   }
-  function readyTexture(texture:T.Texture){if(disposed||texture.userData.disposed)return;if(texture.userData.visible)invalidate();else if(warm){warmQueue.add(texture);scheduleWarm()}}
-  const disposeTexture=(texture:T.Texture)=>{texture.userData.disposed=true;texture.userData.cancelDecode?.();warmQueue.delete(texture);texture.dispose()}
+  function readyTexture(texture:T.Texture){if(disposed||texture.userData.disposed)return;const alias=aliases.get(texture);if(alias)alias.needsUpdate=true;if(texture.userData.visible)invalidate();else if(warm){warmQueue.add(texture);scheduleWarm()}}
+  const disposeTexture=(texture:T.Texture)=>{texture.userData.disposed=true;texture.userData.cancelDecode?.();warmQueue.delete(texture);const alias=aliases.get(texture);if(alias){aliases.delete(texture);alias.dispose()}texture.dispose()}
   const trim=()=>{
-    const pinned=new Set([...materials].flatMap(mat=>mat.map?[mat.map]:[]))
+    const pinned=new Set([...materials].flatMap(mat=>mat.map?[canonical.get(mat.map)??mat.map]:[]))
     for(const [key,entry] of cache){entry.texture.userData.visible=pinned.has(entry.texture);if(!entry.texture.userData.visible&&!key.startsWith(generation+':')){cache.delete(key);disposeTexture(entry.texture);evictions++}}
     const plan=textureEvictions(cache,pinned,capacity,PAGE_TEXTURE_BUDGET-reservedDecodeBytes())
     for(const key of plan.keys){const entry=cache.get(key)!;cache.delete(key);disposeTexture(entry.texture);evictions++}
     estimatedBytes=plan.bytes+reservedDecodeBytes();peakEstimatedBytes=Math.max(peakEstimatedBytes,estimatedBytes)
   }
-  function acquire(index:number,flip=false){
-    const key=generation+':'+index+':'+flip
-    const cached=cache.get(key)
-    if(cached){hits++;cache.delete(key);cache.set(key,cached);return cached.texture}
-    misses++;const started=performance.now();const texture=pageTexture(config,index,flip,decoder,readyTexture);const elapsed=performance.now()-started;textureBuildMs+=elapsed;peakTextureBuildMs=Math.max(peakTextureBuildMs,elapsed);cache.set(key,{texture,bytes:Number(texture.userData.estimatedBytes)});return texture
+  function acquire(index:number,flip=false,prefetch=false){
+    const key=faceKey(index,flip)
+    let entry=cache.get(key)
+    if(entry){hits++;if(!prefetch||!directionalPrefetch){cache.delete(key);cache.set(key,entry)}}
+    else{
+      misses++;const started=performance.now();const texture=pageTexture(config,index,sharedFaces?false:flip,decoder,readyTexture);const elapsed=performance.now()-started;textureBuildMs+=elapsed;peakTextureBuildMs=Math.max(peakTextureBuildMs,elapsed);entry={texture,bytes:Number(texture.userData.estimatedBytes)};cache.set(key,entry)
+    }
+    const base=entry.texture
+    if(!sharedFaces||!flip)return base
+    let alias=aliases.get(base)
+    if(!alias){
+      // Three r174 shares a WebGL allocation by Source and sampler settings.
+      // UV transforms are per-texture; asynchronous redraw marks both views.
+      alias=base.clone();alias.userData=base.userData;alias.repeat.x=-1;alias.offset.x=1
+      aliases.set(base,alias);canonical.set(alias,base)
+    }else aliasHits++
+    return alias
+  }
+  function touchMap(mat:T.MeshPhongMaterial){
+    if(!directionalPrefetch||!mat.map)return
+    const base=canonical.get(mat.map)??mat.map
+    for(const [key,entry] of cache)if(entry.texture===base){cache.delete(key);cache.set(key,entry);break}
   }
   let idle:number|null=null,idleNative=false,disposed=false,preloadKey=''
   let prefetched=0,prefetchUploads=0,textureBuildMs=0,peakTextureBuildMs=0
@@ -171,7 +193,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   }
   const cancelPreload=()=>{if(idle!==null){if(idleNative)window.cancelIdleCallback(idle);else window.clearTimeout(idle);idle=null}}
   function preload(index:number,count:number,direction?:1|-1){
-    const key=generation+':'+index+':'+count+':'+(direction??0);if(key===preloadKey)return;preloadKey=key;cancelPreload()
+    const key=generation+':'+index+':'+count+':'+(direction??(directionalPrefetch?'idle'+lastDirection:0));if(key===preloadKey)return;preloadKey=key;cancelPreload()
     const queue:[number,boolean][]=[]
     const add=(face:number,flip=false)=>{if(!queue.some(([f,b])=>f===face&&b===flip))queue.push([face,flip])}
     const append=(at:number,d:1|-1)=>{
@@ -180,11 +202,11 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
       const revealed=pageFaces(at+d,count);add(d===1?revealed.right:revealed.left)
     }
     if(direction){append(index,direction);if(pooled)append(index+direction,direction)}
-    else{append(index,1);append(index,-1);if(pooled)append(index+1,1)}
+    else{const preferred=directionalPrefetch?lastDirection:1;append(index,preferred);append(index,preferred===1?-1:1);if(pooled)append(index+preferred,preferred)}
     const next=(deadline?:IdleDeadline)=>{
       idle=null;if(disposed||!queue.length)return
       if(deadline&&deadline.timeRemaining()<5){schedule();return}
-      const [face,flip]=queue.shift()!;const texture=acquire(face,flip);prefetched++
+      const [face,flip]=queue.shift()!;const texture=acquire(face,flip,true);prefetched++
       trim();if(warm&&!texture.userData.disposed&&warm(texture))prefetchUploads++
       schedule()
     }
@@ -197,16 +219,17 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   function assign(mat:T.MeshPhongMaterial,index:number,flip=false){
     const key=generation+':'+index+':'+flip
     if(keys.get(mat)===key)return
-    const hadMap=!!mat.map;materials.add(mat);mat.map=acquire(index,flip);if(!hadMap)mat.needsUpdate=true;keys.set(mat,key);trim()
+    const hadMap=!!mat.map;touchMap(mat);materials.add(mat);mat.map=acquire(index,flip);if(!hadMap)mat.needsUpdate=true;keys.set(mat,key);trim()
   }
-  function unpin(mat:T.MeshPhongMaterial){if(keys.has(mat)||mat.map&&mat.map!==placeholder){keys.delete(mat);mat.map=placeholder}}
+  function unpin(mat:T.MeshPhongMaterial){if(keys.has(mat)||mat.map&&mat.map!==placeholder){touchMap(mat);keys.delete(mat);mat.map=placeholder}}
   function update(next:BookConfig){
-    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor){cancelPreload();cancelWarm();decoder.clearCache();generation++;keys.clear();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()}
+    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor){cancelPreload();cancelWarm();decoder.clearCache();lastDirection=1;generation++;keys.clear();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()}
     if(next.paperColor!==config.paperColor){for(const [mat,vertical] of [[chunkEdge,true],[chunkHead,false]] as const){mat.map?.dispose();mat.map=paperEdgeTexture(next.paperColor,vertical);mat.needsUpdate=true}}
     config=next;blank.color.set(next.paperColor)
   }
   function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].map(m=>!!m.map&&!m.map.userData.pending&&(!warm||warm(m.map))).every(Boolean)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
+    if(active.length&&!active[0].opening)lastDirection=active[0].direction
     if(active.length){if(pooled&&!(active[0].span&&active[0].span>1)&&!active[0].opening)preload(index+active[0].direction*activeSpan(active),count,active[0].direction);else{cancelPreload();preloadKey=''}}else{preload(index,count);preparePool()}
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)
@@ -223,5 +246,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(let i=block?0:active.length;i<slots.length;i++){const s=slots[i];s.leaf.visible=false;unpin(s.front);unpin(s.back)}
     trim()
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({sharedFaces,aliases:aliases.size,aliasHits,lastDirection,reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }
