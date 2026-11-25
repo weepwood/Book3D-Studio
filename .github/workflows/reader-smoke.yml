@@ -35,6 +35,7 @@ on:
       - 'src/core/curveMetrics.ts'
       - 'src/core/surfaceMetrics.ts'
       - 'src/core/sectionSolver.ts'
+      - 'src/core/layerSolver.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'

@@ -4,7 +4,7 @@ test('材料预设、2000页双向翻动和缓存预算持续稳定',async({page
  test.setTimeout(120000)
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
  const hardware=process.env.BOOK3D_HARDWARE_GPU==='1'
- await page.goto('/?perf=1&curve=1&surface=1'+(hardware?'&prewarm=1':'')+(process.env.BOOK3D_ELASTIC==='1'?'&elastic=1':''));const host=page.locator('.canvas-host')
+ await page.goto('/?perf=1&curve=1&surface=1'+(hardware?'&prewarm=1':'')+(process.env.BOOK3D_ELASTIC==='1'?'&elastic=1':'')+(process.env.BOOK3D_LAYERS==='1'?'&layers=1':''));const host=page.locator('.canvas-host')
  await expect(host.locator('canvas')).toBeVisible({timeout:15000})
  if(hardware)await expect(host).toHaveAttribute('data-shader-warm','submitted',{timeout:15000})
  const shaderMs=hardware?Number(await host.getAttribute('data-shader-warm-ms')):null

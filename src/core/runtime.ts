@@ -16,7 +16,7 @@ import {curlTarget} from './pageChain'
 import {referenceDragProgress} from './pressReference'
 import {desiredBatch,orderedProgress,openingLeaves,OPENING_DROP_MS,STACK_SETTLE_MS,activeSpan} from './pageWindow'
 import {RenderProbe} from './renderProbe'
-import {PRESS_SCENE,coverProgress,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
+import {PRESS_SCENE,coverProgress,presentationStep,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 const SETTLED_DROP=PRESS_SCENE.openDelayMs+STACK_SETTLE_MS
 export class BookRuntime {
   private renderer:T.WebGLRenderer
@@ -188,13 +188,13 @@ export class BookRuntime {
     this.perf?.start(now);this.perf?.phase('start')
     const openingTarget=this.config.opening>=READ_ANGLE?180:this.config.opening
     this.orbitMoving=this.controls.enabled&&this.controls.update()
-    const elapsed=Math.max(0,(now-this.last)/1000),dt=Math.min(.05,elapsed),cameraDt=Math.min(.5,elapsed);this.last=now
+    const elapsed=Math.max(0,(now-this.last)/1000),dt=Math.min(.05,elapsed),cameraDt=presentationStep(elapsed);this.last=now
     const motionDt=this.motionClock.advance(dt)
     if(this.orbitTransition){const a=this.orbitTransition;a.elapsed+=dt;const t=Math.min(1,a.elapsed/.28),e=t*t*(3-2*t),q=new T.Quaternion().setFromUnitVectors(a.from.clone().normalize(),a.to.clone().normalize());const dir=a.from.clone().normalize().applyQuaternion(new T.Quaternion().slerp(q,e));this.camera.position.copy(this.controls.target).addScaledVector(dir,T.MathUtils.lerp(a.from.length(),a.to.length(),e));this.controls.update();if(t===1)this.cancelOrbitTransition()}
     if(this.coverMotion&&this.coverMotion.to!==openingTarget&&Math.abs(this.open-openingTarget)<=.0001)this.coverMotion=null
     if(this.coverMotion?.to!==openingTarget&&Math.abs(this.open-openingTarget)>.0001){this.coverMotion={from:this.open,to:openingTarget,elapsed:0};if(openingTarget===180){this.dropElapsed=0;this.openingActive=true}}
-    if(this.reduced.matches){this.open=openingTarget;this.coverMotion=null;this.dropElapsed=2000;this.openingActive=false}else if(this.coverMotion){this.coverMotion.elapsed+=dt*1000;const a=coverProgress(this.coverMotion.from,this.coverMotion.to,this.coverMotion.elapsed);this.open=a.angle;if(a.done)this.coverMotion=null}
-    if(openingTarget===180){if(this.open>=179.5)this.dropElapsed=Math.min(SETTLED_DROP,this.dropElapsed+(this.openingActive?dt:Math.min(.25,elapsed))*1000)}else {this.dropElapsed=2000;this.openingActive=false}
+    if(this.reduced.matches){this.open=openingTarget;this.coverMotion=null;this.dropElapsed=2000;this.openingActive=false}else if(this.coverMotion){this.coverMotion.elapsed+=cameraDt*1000;const a=coverProgress(this.coverMotion.from,this.coverMotion.to,this.coverMotion.elapsed);this.open=a.angle;if(a.done)this.coverMotion=null}
+    if(openingTarget===180){if(this.open>=179.5)this.dropElapsed=Math.min(SETTLED_DROP,this.dropElapsed+cameraDt*1000)}else {this.dropElapsed=2000;this.openingActive=false}
     this.book.setOpening(this.open>=179.5&&openingTarget===180?180:this.open);this.book.setDrop(Math.max(0,this.dropElapsed-PRESS_SCENE.openDelayMs));this.applyLight(this.open/180)
     this.perf?.phase('opening');const target=nextLeaf(0,this.config.pageIndex,leafCount(this.config))
     const drop=this.openingActive&&this.open>=179.5?openingLeaves(this.index,leafCount(this.config),Math.max(0,this.dropElapsed-PRESS_SCENE.openDelayMs)):[]

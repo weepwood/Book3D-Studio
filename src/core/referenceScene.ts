@@ -6,6 +6,8 @@ export const PRESS_SCENE={
  read:{ambientColor:8355194,ambientIntensity:1.4,keyColor:0xf9f6f0,keyIntensity:1.41,key:[9.4,4.6,4.3],sunColor:0xf5f7ff,sunIntensity:1.4,sun:[-15,-15,39.7],shadowHalf:51.9,near:.001,far:256.8,bias:-.00118,normalBias:.0401,radius:9.74},
  shadowMap:2048,mobileShadowMap:512,sourceWidth:15.6
 } as const
+// Presentation time is independent of the bounded physics integrator.
+export const presentationStep=(elapsed:number)=>clamp(elapsed,0,.5)
 export function coverProgress(from:number,to:number,elapsed:number){
  const duration=to>from?PRESS_SCENE.coverMs:PRESS_SCENE.closeMs
  const t=clamp(elapsed/duration),e=t*t*(3-2*t)

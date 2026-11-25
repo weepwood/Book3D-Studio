@@ -2,6 +2,7 @@ import * as T from 'three'
 import {stackBend,stackSweep,offsetStackProfile,PRESS_STACK_PROFILE} from './stackProfile'
 import {sampleChain,rollPoint,projectChainLength,type Chain} from './pageChain'
 import {clamp} from './pagePhysics'
+import {createLayerSolver} from './layerSolver'
 import {createSectionWorkspace,solveSectionClearance,type SectionEdge} from './sectionSolver'
 // The reference's page model is much larger. Fit its angular profile to our
 // independent cover clearance before sampling; this is explicitly an adapter.
@@ -124,8 +125,8 @@ export function createChunkGeometry(w:number,h:number){
  const getMaterialEdges=()=>{if(materialEdges)return materialEdges;materialEdges=[];const seenEdges=new Set<string>();for(const indices of faceIndices)for(let k=0;k<indices.length;k+=3)for(const [i,j] of [[indices[k],indices[k+1]],[indices[k+1],indices[k+2]],[indices[k+2],indices[k]]]){
    const key=Math.min(i,j)+':'+Math.max(i,j);if(seenEdges.has(key))continue;seenEdges.add(key)
    const rest=Math.hypot(original[i*3]-original[j*3],original[i*3+1]-original[j*3+1]);if(rest>1e-8)materialEdges.push({i,j,rest})
- }return materialEdges};const columns=materialColumns(original,w),rowIndices=Uint8Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS));let lastRepeat=NaN
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number,slidingLayers=false,elasticSections=false){
+ }return materialEdges};const columns=materialColumns(original,w),rowIndices=Uint8Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS));let lastRepeat=NaN,layerSolver:ReturnType<typeof createLayerSolver>|null=null,layerKeys:Int32Array|null=null
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number,slidingLayers=false,elasticSections=false,independentLayers=false){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
    const samples=(rows??[chain]).map(c=>columns.u.map(u=>sampleChain(c,u))),layerSamples=layers?.map(l=>columns.u.map(u=>sampleChain(l.chain,u)))
    // A loose stack bends through layer slip rather than stretching the outer
@@ -140,6 +141,12 @@ export function createChunkGeometry(w:number,h:number){
         for(let k=0;k<edges.length;k++){const {i,j}=topology[k],edge=edges[k];edge.dx=p.getX(j)-p.getX(i);edge.dy=p.getY(j)-p.getY(i);edge.dz=p.getZ(j)-p.getZ(i)}
         solveSectionClearance(lifts,minimum,edges,49,1-weight,6,sectionWorkspace??=createSectionWorkspace(lifts.length))}
     }for(let i=0;i<p.count;i++){const lift=lifts[liftKeys[i]];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
+   if(slidingLayers&&independentLayers&&weight<1&&depth>1e-8){
+    const n=lifts.length,solver=layerSolver??=createLayerSolver(49,CHUNK_HEIGHT_SEGMENTS+1,w,h),keys=layerKeys??=Int32Array.from({length:p.count},(_,i)=>Math.round((original[i*3+2]+.5)*2)*n+liftKeys[i])
+    solver.begin();for(let i=0;i<p.count;i++)solver.set(keys[i],p.getX(i),p.getY(i),p.getZ(i))
+    const result=solver.solve(1-weight,depth,floor,clearance)
+    if(result?.accepted)for(let i=0;i<p.count;i++)p.setZ(i,p.getZ(i)+solver.offsets[keys[i]])
+   }
    const repeat=paperEdgeRepeat(w,depth,leafPitch);if(repeat!==lastRepeat){lastRepeat=repeat;for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true}
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
    if(overlay){
