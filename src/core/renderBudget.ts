@@ -19,3 +19,5 @@ export class RenderBudget {
  shadowSize(full:number){return Math.min(full,[full,1024,512][this.level])}
  reset(){this.level=0;this.slow=0;this.fast=0;this.cooldown=0}
 }
+
+export function renderProfileLevel(profile:string|null){return profile==='balanced'?1:profile==='economy'?2:0}

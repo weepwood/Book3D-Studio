@@ -16,3 +16,8 @@ it('recovers sustained fast motion gradually, never enlarges mobile shadow map',
  for(let i=0;i<45;i++)b.observe(2,16,true)
  expect(b.level).toBe(0)
 })
+it('only explicit known fixed profiles may lower rendering quality',async()=>{
+ const {renderProfileLevel}=await import('../src/core/renderBudget')
+ expect(renderProfileLevel('balanced')).toBe(1);expect(renderProfileLevel('economy')).toBe(2)
+ for(const x of [null,'full','invalid','constructor','__proto__'])expect(renderProfileLevel(x)).toBe(0)
+})

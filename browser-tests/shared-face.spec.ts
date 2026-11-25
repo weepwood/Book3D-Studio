@@ -33,7 +33,7 @@ test('共享正反纸面Source保留独立UV、异步更新和GPU释放',async({
     const after=read(),metrics=layer.textureMetrics(),textureCount=renderer.info.memory.textures
     const sameSource=normal.source===flipped.source,repeat=[normal.repeat.x,flipped.repeat.x],pending=normal.userData.pending+flipped.userData.pending
     layer.dispose();disposeTree(layer.root);target.dispose()
-    return {before,after,metrics,textureCount,sameSource,repeat,pending,remaining:renderer.info.memory.textures}
+    return {before,after,metrics,textureCount,sameSource,repeat,pending,released:normal.image===null&&flipped.image===null,remaining:renderer.info.memory.textures}
    }finally{geometry.dispose();materials.forEach(m=>m.dispose());renderer.dispose()}
   })
   expect(data.pending).toBe(0)
@@ -41,7 +41,7 @@ test('共享正反纸面Source保留独立UV、异步更新和GPU释放',async({
   expect(data.repeat).toEqual([1,-1])
   expect(data.after[0]).toEqual(data.after[3]);expect(data.after[1]).toEqual(data.after[2]);expect(data.after[0]).not.toEqual(data.after[1])
   expect(data.after).not.toEqual(data.before)
-  expect(data.remaining).toBe(0)
+  expect(data.remaining).toBe(0);expect(data.released).toBe(true)
   results.push(data)
  }
  expect(results[1].after).toEqual(results[0].after)

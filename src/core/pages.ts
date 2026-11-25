@@ -69,13 +69,20 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,decoder:ReturnType<t
   // An immutable synthetic page can be composited directly. Retain a
   // pristine base only when asynchronous image decoding can trigger a
   // second blend; otherwise duplicate backing canvases are unnecessary.
-  const own=hasBleed&&(frontImage||backImage)?canvas.cloneNode() as HTMLCanvasElement:null
+  let own=hasBleed&&(frontImage||backImage)?canvas.cloneNode() as HTMLCanvasElement:null
   if(own)context(own).drawImage(canvas,0,0,w,h)
   let reverse:HTMLCanvasElement|null=null
   const redraw=()=>{if(texture.userData.disposed)return;if(own){ctx.clearRect(0,0,w,h);ctx.drawImage(own,0,0,w,h)}if(reverse&&c.pageBleed>0){ctx.save();ctx.globalAlpha=c.pageBleed;ctx.globalCompositeOperation='multiply';ctx.translate(w,0);ctx.scale(-1,1);ctx.drawImage(reverse,0,0,w,h);ctx.restore()}texture.needsUpdate=true}
   texture.userData.pending=0
   const cancellations:(()=>void)[]=[]
-  texture.userData.cancelDecode=()=>{for(const cancel of cancellations)cancel();cancellations.length=0;texture.userData.pending=0}
+  // Once both faces have been composited, the final texture is the only
+  // canvas that must survive. Cancel/dispose can use this same cleanup.
+  const releaseScratch=()=>{
+    if(own){own.width=own.height=1;own=null}
+    if(reverse){reverse.width=reverse.height=1;reverse=null}
+    cancellations.length=0;delete texture.userData.cancelDecode
+  }
+  texture.userData.cancelDecode=()=>{for(const cancel of cancellations)cancel();texture.userData.pending=0;releaseScratch()}
   const load=(url:string,done:(im:DecodedPage)=>void)=>{
     texture.userData.pending++
     cancellations.push(decoder.request(url,im=>{
@@ -84,7 +91,7 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,decoder:ReturnType<t
       catch{texture.userData.decodeFailed=true}
       finally{
         texture.userData.pending--
-        if(texture.userData.pending===0){redraw();cancellations.length=0;ready(texture)}
+        if(texture.userData.pending===0){redraw();releaseScratch();ready(texture)}
       }
     },()=>!!texture.userData.visible))
   }
@@ -93,6 +100,7 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,decoder:ReturnType<t
   if(hasBleed){
     reverse=canvas.cloneNode() as HTMLCanvasElement;const g=context(reverse);g.fillStyle='#ffffff';g.fillRect(0,0,w,h);g.fillStyle='#302e28';g.font='24px Georgia';const text=passages[Math.floor(opposite/2)%passages.length][2];let line='',y=h*.34;for(const word of (text+' '+text).split(' ')){const next=line?line+' '+word:word;if(g.measureText(next).width>w-96){if(y>h-90)break;g.fillText(line,48,y);y+=34;line=word}else line=next}if(line&&y<=h-90)g.fillText(line,48,y);redraw();if(backImage)load(backImage,im=>{if(reverse)paint(reverse,im,'#ffffff')})
   }
+  if(texture.userData.pending===0)releaseScratch()
   return texture
 }
 export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>void,warm?:(texture:T.Texture)=>boolean){
@@ -132,13 +140,16 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   const decoder=createPageDecodeQueue(url=>decodePageImage(url,raster.width,raster.height),2,decodedCacheEnabled?decodeBudget:0)
   const reservedDecodeBytes=()=>decodedCacheEnabled&&config.pageImages.length?decodeBudget:0
   const warmQueue=new Set<T.Texture>()
+  let backgroundPaused=false,priorityPauses=0,priorityResumes=0
+  let preloadPlan:{index:number;count:number;direction?:1|-1}|null=null
+  let poolWanted=false
   let warmIdle:number|null=null,warmNative=false,decodedWarm=0,warmSuspended=false
-  function cancelWarm(){
+  function cancelWarmHandle(){
     if(warmIdle!==null){if(warmNative)window.cancelIdleCallback(warmIdle);else window.clearTimeout(warmIdle);warmIdle=null}
-    warmQueue.clear()
   }
+  function cancelWarm(){cancelWarmHandle();warmQueue.clear()}
   function scheduleWarm(){
-    if(disposed||warmSuspended||!warm||warmIdle!==null||!warmQueue.size)return
+    if(disposed||warmSuspended||backgroundPaused||!warm||warmIdle!==null||!warmQueue.size)return
     const run=(deadline?:IdleDeadline)=>{
       warmIdle=null;if(disposed)return
       if(!deadline||deadline.timeRemaining()>=5){
@@ -151,7 +162,16 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     warmIdle=warmNative?window.requestIdleCallback(run):window.setTimeout(()=>run(),32)
   }
   function readyTexture(texture:T.Texture){if(disposed||texture.userData.disposed)return;const alias=aliases.get(texture);if(alias)alias.needsUpdate=true;if(texture.userData.visible)invalidate();else if(warm){warmQueue.add(texture);scheduleWarm()}}
-  const disposeTexture=(texture:T.Texture)=>{texture.userData.disposed=true;texture.userData.cancelDecode?.();warmQueue.delete(texture);const alias=aliases.get(texture);if(alias){aliases.delete(texture);alias.dispose()}texture.dispose()}
+  const disposeTexture=(texture:T.Texture)=>{
+    texture.userData.disposed=true;texture.userData.cancelDecode?.();warmQueue.delete(texture)
+    const alias=aliases.get(texture);if(alias){aliases.delete(texture);alias.dispose()}
+    texture.dispose()
+    // All mapped aliases have already been unpinned; release backing raster
+    // even if a driver/diagnostic retains the disposed Texture/Source wrapper.
+    const raster=texture.image
+    if(raster instanceof HTMLCanvasElement){raster.width=raster.height=1}
+    texture.source.data=null
+  }
   const trim=()=>{
     const pinned=new Set([...materials].flatMap(mat=>mat.map?[canonical.get(mat.map)??mat.map]:[]))
     for(const [key,entry] of cache){entry.texture.userData.visible=pinned.has(entry.texture);if(!entry.texture.userData.visible&&!key.startsWith(generation+':')){cache.delete(key);disposeTexture(entry.texture);evictions++}}
@@ -188,11 +208,13 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   let poolIdle:number|null=null
   function cancelPool(){if(poolIdle!==null){window.cancelIdleCallback(poolIdle);poolIdle=null}}
   function preparePool(){
-    if(!pooled||disposed||slots.length>=LIVE_LEAF_LIMIT||poolIdle!==null||typeof window.requestIdleCallback!=='function')return
+    poolWanted=true
+    if(backgroundPaused||!pooled||disposed||slots.length>=LIVE_LEAF_LIMIT||poolIdle!==null||typeof window.requestIdleCallback!=='function')return
     poolIdle=window.requestIdleCallback(deadline=>{poolIdle=null;if(disposed)return;if(deadline.timeRemaining()>=5){const s=slot(slots.length);warm?.(s.gpu.texture)}preparePool()})
   }
   const cancelPreload=()=>{if(idle!==null){if(idleNative)window.cancelIdleCallback(idle);else window.clearTimeout(idle);idle=null}}
   function preload(index:number,count:number,direction?:1|-1){
+    preloadPlan={index,count,direction};if(backgroundPaused)return
     const key=generation+':'+index+':'+count+':'+(direction??(directionalPrefetch?'idle'+lastDirection:0));if(key===preloadKey)return;preloadKey=key;cancelPreload()
     const queue:[number,boolean][]=[]
     const add=(face:number,flip=false)=>{if(!queue.some(([f,b])=>f===face&&b===flip))queue.push([face,flip])}
@@ -229,6 +251,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   }
   function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].map(m=>!!m.map&&!m.map.userData.pending&&(!warm||warm(m.map))).every(Boolean)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
+    poolWanted=!active.length;preloadPlan=null
     if(active.length&&!active[0].opening)lastDirection=active[0].direction
     if(active.length){if(pooled&&!(active[0].span&&active[0].span>1)&&!active[0].opening)preload(index+active[0].direction*activeSpan(active),count,active[0].direction);else{cancelPreload();preloadKey=''}}else{preload(index,count);preparePool()}
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
@@ -246,5 +269,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(let i=block?0:active.length;i<slots.length;i++){const s=slots[i];s.leaf.visible=false;unpin(s.front);unpin(s.back)}
     trim()
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({sharedFaces,aliases:aliases.size,aliasHits,lastDirection,reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  function pauseBackground(){if(disposed||backgroundPaused)return;backgroundPaused=true;priorityPauses++;cancelPool();cancelPreload();cancelWarmHandle();preloadKey=''}
+  function resumeBackground(){if(disposed||!backgroundPaused)return;backgroundPaused=false;priorityResumes++;if(preloadPlan)preload(preloadPlan.index,preloadPlan.count,preloadPlan.direction);if(poolWanted)preparePool();scheduleWarm()}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,pauseBackground,resumeBackground,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({priorityPauses,priorityResumes,backgroundPaused,sharedFaces,aliases:aliases.size,aliasHits,lastDirection,reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }
