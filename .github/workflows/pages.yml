@@ -22,6 +22,15 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
+      - name: Install pinned V0.9 preview beside stable site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          archive=$(mktemp -d)
+          trap 'rm -rf "$archive"' EXIT
+          gh release download v0.9.0-preview.1 --repo "$GITHUB_REPOSITORY" --pattern Book3D-Studio-v0.9.0-preview.1.zip --dir "$archive"
+          python3 scripts/install-pages-preview.py "$archive/Book3D-Studio-v0.9.0-preview.1.zip" dist/preview
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
