@@ -70,15 +70,21 @@ function commonTranslation(a:MovingFace,b:MovingFace,eps=1e-10){
  const delta=a.end.a.clone().sub(a.start.a)
  return [a,b].every(f=>['a','b','c'].every(key=>{const k=key as 'a'|'b'|'c';return f.end[k].clone().sub(f.start[k]).distanceTo(delta)<=eps}))
 }
-export function scanSweptTrees(a:Node|null,b:Node|null,budget=256,names:[string,string]=['',''],projection=true){
- const result={tested:0,hits:0,uncertain:0,support:0,touch:0,clear:0,complete:true,topologyChanged:false}
+export function scanSweptTrees(a:Node|null,b:Node|null,budget=256,names:[string,string]=['',''],projection=true,refinementBudget=0){
+ const result={tested:0,hits:0,uncertain:0,support:0,touch:0,clear:0,complete:true,topologyChanged:false,refined:0,refinementClear:0,refinementHit:0}
  if(!a||!b){result.complete=false;result.topologyChanged=true;return result}
  const visit=(a:Node,b:Node)=>{if(!result.complete||!overlaps(a.box,b.box,1e-6))return;if(a.children){for(const c of a.children)visit(c,b);return}if(b.children){for(const c of b.children)visit(a,c);return}for(const f of a.faces??[])for(const g of b.faces??[]){if(!overlaps(f.box,g.box,1e-6))continue;if(result.tested>=budget){result.complete=false;return}result.tested++;if(commonTranslation(f,g)){
  const kind=triangleContact(f.start,g.start,1e-6)
  if(kind==='touch'){result.touch++;continue}
  if(kind==='coplanar'&&isSupportPair(names[0],f.material,names[1],g.material)&&f.start.getNormal(new Vector3()).dot(g.start.getNormal(new Vector3()))<-.999){result.support++;continue}
  if(kind==='penetration'||kind==='coplanar')result.hits++;else result.clear++;continue
- }const r=sweptTriangleContact(f.start,f.end,g.start,g.end,3,1e-6,projection);if(r==='hit')result.hits++;else if(r==='uncertain')result.uncertain++;else result.clear++}}
+ }let r=sweptTriangleContact(f.start,f.end,g.start,g.end,3,1e-6,projection)
+ if(r==='uncertain'&&result.refined<Math.max(0,Math.min(16,Math.floor(refinementBudget)))){
+  result.refined++
+  r=sweptTriangleContact(f.start,f.end,g.start,g.end,6,1e-6,projection)
+  if(r==='clear')result.refinementClear++;else if(r==='hit')result.refinementHit++
+ }
+ if(r==='hit')result.hits++;else if(r==='uncertain')result.uncertain++;else result.clear++}}
  visit(a,b);return result
 }
 export function scanSweptMeshes(a0:MotionSnapshot,a1:MotionSnapshot,b0:MotionSnapshot,b1:MotionSnapshot,budget=256){return scanSweptTrees(prepareSweptMesh(a0,a1),prepareSweptMesh(b0,b1),budget)}

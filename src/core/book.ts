@@ -108,6 +108,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   const elasticSections=new URLSearchParams(location.search).get('elastic')==='1'
   const independentLayers=new URLSearchParams(location.search).get('layers')==='1'
   const contactEnvelope=new URLSearchParams(location.search).get('contactEnvelope')!=='0'
+  const limitedTwist=new URLSearchParams(location.search).get('limitedTwist')==='1'
   const curveQuality={samples:0,maxRelativeLengthError:0,maxRootError:0,maxCurvature:0,maxEnergyPerWidth:0}
   const recordCurve=(chain:Chain)=>{if(!measureCurve)return;const m=curveMetrics(chain,material.rigidity);curveQuality.samples++;curveQuality.maxRelativeLengthError=Math.max(curveQuality.maxRelativeLengthError,m.relativeLengthError);curveQuality.maxRootError=Math.max(curveQuality.maxRootError,m.rootError);curveQuality.maxCurvature=Math.max(curveQuality.maxCurvature,m.maxCurvature);curveQuality.maxEnergyPerWidth=Math.max(curveQuality.maxEnergyPerWidth,m.bendingEnergy)}
   let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurns:ActiveLeaf[]=[],dropMs=settledDropMs,stackKey='',refreshCount=0,stackPoseCount=0
@@ -151,7 +152,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       if(block){
         const lift=(turn.chunkLift??0)*Math.min(pageWidth*.075,layout.moving*.5+pageWidth*.018)+feedbackLift
         const withLift=(p:number)=>liftChunkChain(turningChain(pageWidth,p,flex,right,left,readingIndex/count),lift,p,preserveArc)
-        const row=turn.chunkGesture&&turn.progress>0&&turn.progress<.5?(u:number)=>withLift(chunkRowProgress(turn.progress,u,direction,turn.grip)):undefined
+        const row=turn.chunkGesture&&turn.progress>0&&turn.progress<.5?(u:number)=>withLift(T.MathUtils.lerp(turnP,chunkRowProgress(turn.progress,u,direction,turn.grip),limitedTwist&&preserveArc ? .5 : 1)):undefined
         const weight=chunkEndpointWeight(turnP)*(1-Math.min(1,turn.chunkLift??0))
         const layers=weight>0?[0,.5,1].map(q=>{
           const dr=layout.right+layout.moving*q,dl=layout.left+layout.moving*(1-q)
@@ -222,11 +223,12 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   }
   // Diagnostic only: actual deformed active geometry (CPU proxy for GPU
   // leaves, full chunk AABB corners). Not a triangle collision proof.
-  const surfaceQuality={leaf:surfaceSummary(),chunk:surfaceSummary(),handoff:surfaceSummary()}
+  const surfaceQuality={leaf:surfaceSummary(),chunk:surfaceSummary(),handoff:surfaceSummary(),handoffSupport:surfaceSummary()}
+  function resetSurfaceQuality(){for(const key of Object.keys(surfaceQuality) as (keyof typeof surfaceQuality)[])surfaceQuality[key]=surfaceSummary()}
   function measureActiveSurfaces(){
     for(const [i,turn] of activeTurns.entries()){
       if((turn.span??1)>1){if(!pages.chunk.visible)continue;for(const face of [4,5])accumulateSurface(surfaceQuality.chunk,measureSurface(pages.chunk.geometry,pageWidth,pageHeight,face))
-        for(const child of pages.chunk.children)if(child instanceof T.Mesh&&child.visible)accumulateSurface(surfaceQuality.handoff,measureSurface(child.geometry,pageWidth,pageHeight))
+        for(const child of pages.chunk.children)if(child instanceof T.Mesh&&child.visible){accumulateSurface(surfaceQuality.handoff,measureSurface(child.geometry,pageWidth,pageHeight));accumulateSurface(surfaceQuality.handoffSupport,measureSurface(pages.chunk.geometry,pageWidth,pageHeight,turn.direction===1?4:5))}
       }else{const slot=pages.slots[i];if(slot?.leaf.visible)accumulateSurface(surfaceQuality.leaf,measureSurface(slot.gpu.pickMesh().geometry,pageWidth,pageHeight))}
     }
     return surfaceQuality
@@ -283,14 +285,14 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     }
     return {opening:last,index:readingIndex,self,containment}
   }
-  const compareSweeps=new URLSearchParams(location.search).get('sweepCompare')==='1'
+  const compareSweeps=new URLSearchParams(location.search).get('sweepCompare')==='1',refineSweeps=new URLSearchParams(location.search).get('sweepRefine')==='1'
   let priorMotion:Map<string,MotionSnapshot>|null=null,priorMotionKey=''
   function resetSweptContacts(){priorMotion=null;priorMotionKey=''}
   function sweptCollisionSample(){
     const meshes=captureContactMeshes(),key=[readingIndex,...activeTurns.map(t=>[t.direction,t.span??1].join(':'))].join('|'),current=new Map<string,MotionSnapshot>()
     for(const m of meshes){const p=m.geometry.getAttribute('position');current.set(m.name,{positions:Float32Array.from(p.array),indices:m.geometry.index?Uint32Array.from(m.geometry.index.array):Uint32Array.from({length:p.count},(_,i)=>i),materials:Uint8Array.from({length:Math.floor((m.geometry.index?.count??p.count)/3)},(_,i)=>m.geometry.groups.find(g=>i*3>=g.start&&i*3<g.start+g.count)?.materialIndex??255)})}
     const previous=priorMotion;priorMotion=current;const stable=key===priorMotionKey;priorMotionKey=key
-    const pairs:({a:string;b:string}&ReturnType<typeof scanSweptTrees>&{baseline?:ReturnType<typeof scanSweptTrees>})[]=[]
+    const pairs:({a:string;b:string}&ReturnType<typeof scanSweptTrees>&{baseline?:ReturnType<typeof scanSweptTrees>;coarse?:ReturnType<typeof scanSweptTrees>})[]=[]
     if(!previous||!stable)return {reset:true,pairs}
     // Each temporal BVH is built at most once for this sample interval.
     // Raw swept hits include legitimate support contacts, not just defects.
@@ -300,7 +302,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       const a=meshes[i],b=meshes[j],support=/cover/i.test(a.name)&&/page block/i.test(b.name)||/cover/i.test(b.name)&&/page block/i.test(a.name)
       if(!a.active&&!b.active&&!support)continue
       const ta=tree(a.name),tb=tree(b.name),names:[string,string]=[a.name,b.name]
-      pairs.push({a:a.name,b:b.name,...scanSweptTrees(ta,tb,64,names),...(compareSweeps?{baseline:scanSweptTrees(ta,tb,64,names,false)}:{})})
+      pairs.push({a:a.name,b:b.name,...scanSweptTrees(ta,tb,64,names,true,refineSweeps?8:0),...(compareSweeps?{baseline:scanSweptTrees(ta,tb,64,names,false),...(refineSweeps?{coarse:scanSweptTrees(ta,tb,64,names)}:{})}:{})})
     }
     return {reset:false,pairs}
   }
@@ -388,7 +390,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0||!hit.face)return null;const point=mesh.worldToLocal(hit.point.clone()),fraction=pickedDepth(mesh.geometry,hit.face,point,right?1:-1);if(fraction===null)return null;const countPicked=groupCount(count,fraction);return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,workerContactSnapshot,resetSweptContacts,resolveTriangleContacts,measureActiveSurfaces,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,leftNominal:leftDepthNow,rightNominal:rightDepthNow,moving:Math.max(0,pageDepth-leftDepthNow-rightDepthNow),leaves:leafCount(current),left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),curveQuality:()=>({...curveQuality}),geometryMetrics:()=>({refreshCount,stackPoseCount,chainCacheSize:chainCache.size,dropMs}),prepareChunk:pages.prepareChunk,prepareShaders:pages.prepareShaders,textureMetrics:pages.textureMetrics,cancelPreload:pages.cancelPreload,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,activeHandoffPoints,stationaryHandoffPoints,activeChunkHandoffPoints,stationaryChunkHandoffPoints,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,workerContactSnapshot,resetSweptContacts,resolveTriangleContacts,resetSurfaceQuality,measureActiveSurfaces,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,leftNominal:leftDepthNow,rightNominal:rightDepthNow,moving:Math.max(0,pageDepth-leftDepthNow-rightDepthNow),leaves:leafCount(current),left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),curveQuality:()=>({...curveQuality}),geometryMetrics:()=>({refreshCount,stackPoseCount,chainCacheSize:chainCache.size,dropMs}),prepareChunk:pages.prepareChunk,prepareShaders:pages.prepareShaders,textureMetrics:pages.textureMetrics,cancelPreload:pages.cancelPreload,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,activeHandoffPoints,stationaryHandoffPoints,activeChunkHandoffPoints,stationaryChunkHandoffPoints,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()

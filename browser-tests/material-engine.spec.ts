@@ -39,5 +39,6 @@ test('材料预设、2000页双向翻动和缓存预算持续稳定',async({page
  await page.locator('.left').getByRole('button',{name:/项目/}).click()
  await page.getByRole('button',{name:'复制',exact:true}).click()
  await expect(host).not.toHaveAttribute('data-chunk-handoff-quality',/./)
+ await expect(host).not.toHaveAttribute('data-surface-quality',/./)
  await expect(errors).toEqual([])
 })

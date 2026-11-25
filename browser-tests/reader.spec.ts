@@ -208,5 +208,6 @@ for(const physics of ['legacy','material'] as const)test('真实厚块抓取、�
  const surface=JSON.parse((await host.getAttribute('data-surface-quality'))!)
  expect(surface.handoff.samples).toBeGreaterThan(0);expect(surface.handoff.triangles).toBeGreaterThan(0)
  expect(surface.handoff.invalid).toBe(0);expect(Number.isFinite(surface.handoff.maxAreaError)).toBe(true)
+ expect(surface.handoffSupport.samples).toBe(surface.handoff.samples);expect(surface.handoffSupport.invalid).toBe(0)
  await writeFile(testInfo.outputPath('chunk-handoff-surface.json'),JSON.stringify(surface,null,2))
 })

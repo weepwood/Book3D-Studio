@@ -29,3 +29,12 @@ it('each swept pair is classified exactly once, including certified clear pairs'
  const r=scanSweptMeshes(a,a,b,b)
  expect(r.tested).toBe(r.hits+r.uncertain+r.support+r.touch+r.clear)
 })
+
+it('bounded refinement preserves coarse hit classifications and candidate counts',()=>{
+ const a=snap(0,0),b0={positions:new Float32Array([.5,.5,-1,.5,1,-1,.5,.5,-.9]),indices:new Uint32Array([0,1,2])},b1={positions:new Float32Array([.5,.5,20,.5,1,20,.5,.5,20.1]),indices:new Uint32Array([0,1,2])}
+ const A=prepareSweptMesh(a,a),B=prepareSweptMesh(b0,b1)
+ const coarse=scanSweptTrees(A,B,64),fine=scanSweptTrees(A,B,64,['',''],true,1)
+ expect(coarse).toMatchObject({tested:1,uncertain:1,hits:0,complete:true})
+ expect(fine).toMatchObject({tested:1,uncertain:0,hits:1,refined:1,refinementHit:1,complete:true})
+ expect(scanSweptTrees(A,B,0,['',''],true,1)).toMatchObject({tested:0,refined:0,complete:false})
+})
