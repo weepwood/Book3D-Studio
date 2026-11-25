@@ -36,7 +36,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Prepare exact published baseline
         run: |
-          git worktree add --detach /tmp/book3d-baseline 6efad6774ef1cab44b7864d2c37f9520fb23cb74
+          git worktree add --detach /tmp/book3d-baseline 009d49451127413d21fe4867834f02434b16eba3
           cp -R "$GITHUB_WORKSPACE/node_modules" /tmp/book3d-baseline/node_modules
           rm -rf /tmp/book3d-baseline/node_modules/.vite
           trap 'cat /tmp/book3d-base.log /tmp/book3d-new.log' EXIT

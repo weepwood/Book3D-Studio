@@ -140,7 +140,10 @@ const BINDING_STEPS=192
 // Retain the reference front-loaded profile and reverse-end component,
 // but relax the last part to a horizontal fore-edge contact in our cover basis.
 // This is a local boundary adapter, not a measured source angle.
-const bindingShape=(u:number)=>Math.max(0,1-stackBend(u,PRESS_STACK_PROFILE.stackCurlFrontPower))*(1-u**4)
+// Broaden the transition from the compressed gutter into the body of
+// the stack. The monotone envelope still meets a horizontal fore-edge,
+// and the existing integral solves the same physical rise/arc length.
+export const bindingShape=(u:number)=>{const x=clamp(u),reference=Math.max(0,1-stackBend(x,PRESS_STACK_PROFILE.stackCurlFrontPower))*(1-x**4);return .72*reference+.28*(1-x)**2}
 const bindingMidpoints=Array.from({length:BINDING_STEPS},(_,i)=>bindingShape((i+.5)/BINDING_STEPS))
 function riseFraction(angle:number){let sum=0;for(const u of bindingMidpoints)sum+=Math.sin(angle*u);return sum/BINDING_STEPS}
 const maxRiseFraction=riseFraction(ROOT_LIMIT)
