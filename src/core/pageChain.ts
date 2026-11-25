@@ -48,12 +48,18 @@ export function projectChainLength(chain:Chain,segments=128):Chain{
 // Fade the local roll out before switching its normal direction at the apex.
 // This also handles a dragged leaf crossing the midpoint with residual curl.
 export const safeRollAmount=(amount:number,progress:number)=>Math.max(0,amount)*smooth(Math.abs(progress-.5)/.055)
-export function rollPoint(chain:Chain,u:number,v:number,height:number,amount:number,grip:number,grabU=1,progress=0){
+// The tilted fold must not cross the sewn edge. Otherwise the explicit
+// u=0 constraint creates a discontinuity in the adjacent material column.
+export function rollPivot(width:number,height:number,tilt:number,boundRoot=false){
+ const c=R.curl,base=c.pivotU*width*Math.cos(tilt)+(c.pivotV-.5)*height*Math.sin(tilt)
+ return boundRoot?Math.max(base,.5*height*Math.abs(Math.sin(tilt))):base
+}
+export function rollPoint(chain:Chain,u:number,v:number,height:number,amount:number,grip:number,grabU=1,progress=0,boundRoot=false){
   const c=R.curl,w=chain.width,x=u*w,y=v*height,base=sampleChain(chain,u)
   amount=safeRollAmount(amount,progress)
   if(amount<=1e-6||u<=0)return [base.x,y,base.z] as const
   const tilt=grip*c.foldTiltDeg*Math.PI/180,dx=Math.cos(tilt),dy=Math.sin(tilt)
-  const xi=(x-c.pivotU*w)*dx+(y-(c.pivotV-.5)*height)*dy
+  const xi=x*dx+y*dy-rollPivot(w,height,tilt,boundRoot)
   if(xi<=0)return [base.x,y,base.z] as const
   const span=c.span/R.sourcePageWidth*w*(1+(1-clamp(grabU))*1.2),steps=Math.min(128,Math.max(1,Math.ceil(xi/(span/64)))),ds=xi/steps
   let along=0,out=0

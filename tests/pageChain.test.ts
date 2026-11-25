@@ -8,3 +8,11 @@ describe('参考纸张链',()=>{
 })
 
 it('中点附近残余卷曲连续衰减，不突然翻到相反法线',()=>{const c=makeChain(2,.5,1),a=rollPoint(c,1,.5,3,6,1,1,.49999),b=rollPoint(c,1,.5,3,6,1,1,.50001),base=rollPoint(c,1,.5,3,0,1);expect(Math.hypot(...a.map((v,i)=>v-b[i]))).toBeLessThan(.00001);expect(rollPoint(c,1,.5,3,6,1,1,.5)).toEqual(base)})
+
+it('材料模式斜卷曲折线不穿过装订边，窄幅高书根部邻域连续',()=>{
+ const c=makeChain(.86,.02,.72),height=3.12
+ for(const grip of [-1,1])for(const v of [-.5,.5]){
+  const root=rollPoint(c,0,v,height,2.4,grip,1,.02,true),near=rollPoint(c,1e-6,v,height,2.4,grip,1,.02,true)
+  expect(Math.hypot(...near.map((x,i)=>x-root[i]))).toBeLessThan(2e-6)
+ }
+})

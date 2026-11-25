@@ -37,3 +37,18 @@ it('clearance envelope never lowers clearance, never moves the sewn column, and 
  expect(values[0]).toBe(before[0]);expect(values[4]).toBe(before[4]);expect(values[2]).toBeGreaterThan(0)
  const end=before.slice();spreadClearance(end,4,2,.1,.1,0);expect(end).toEqual(before)
 })
+
+import {createGpuPage} from '../src/core/pageGpu'
+it('窄幅高书斜卷曲根部约束降低完整纸面应变，零卷曲姿态保持原样',()=>{
+ const w=.86,h=3.12,d=.5,c=turningChain(w,.02,.72,boundLayer(w,d,.5),boundLayer(w,d,.5,-1)),page=createGpuPage(w,h)
+ page.update(.02,.72,2.4,1,1,c,-.08,false)
+ const legacy=measureSurface(page.pickMesh().geometry,w,h)
+ page.update(.02,.72,2.4,1,1,c,-.08,true)
+ const constrained=measureSurface(page.pickMesh().geometry,w,h)
+ expect(constrained.invalid).toBe(0)
+ expect(constrained.maxAreaError).toBeLessThan(legacy.maxAreaError)
+ expect(constrained.maxAreaError).toBeLessThan(.15)
+ page.update(.02,.72,0,1,1,c,-.08,false);const before=Array.from(page.pickMesh().geometry.getAttribute('position').array)
+ page.update(.02,.72,0,1,1,c,-.08,true);expect(Array.from(page.pickMesh().geometry.getAttribute('position').array)).toEqual(before)
+ page.dispose()
+})

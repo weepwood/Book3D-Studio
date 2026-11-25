@@ -2,7 +2,7 @@ import * as T from 'three'
 import {stackBend,stackSweep,offsetStackProfile,PRESS_STACK_PROFILE} from './stackProfile'
 import {sampleChain,rollPoint,projectChainLength,type Chain} from './pageChain'
 import {clamp} from './pagePhysics'
-import {solveSectionClearance,type SectionEdge} from './sectionSolver'
+import {createSectionWorkspace,solveSectionClearance,type SectionEdge} from './sectionSolver'
 // The reference's page model is much larger. Fit its angular profile to our
 // independent cover clearance before sampling; this is explicitly an adapter.
 export function stackAngle(width:number,clearance:number,drop:number,open:number,coupling:number){
@@ -120,7 +120,7 @@ export function createChunkGeometry(w:number,h:number){
  const faceIndices=[4,5].map(face=>{const group=g.groups.find(x=>x.materialIndex===face)!;return Array.from(g.index!.array.slice(group.start,group.start+group.count))})
  const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
  const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
- const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),liftKeys=Int32Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48));const handoffVertices=faceIndices.map(indices=>[...new Set(indices)]);let materialEdges:{i:number;j:number;rest:number}[]|null=null
+ const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),liftKeys=Int32Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48));const handoffVertices=faceIndices.map(indices=>[...new Set(indices)]);let materialEdges:{i:number;j:number;rest:number}[]|null=null,sectionEdges:SectionEdge[]|null=null,sectionWorkspace:ReturnType<typeof createSectionWorkspace>|null=null,minimumScratch:Float64Array|null=null
  const getMaterialEdges=()=>{if(materialEdges)return materialEdges;materialEdges=[];const seenEdges=new Set<string>();for(const indices of faceIndices)for(let k=0;k<indices.length;k+=3)for(const [i,j] of [[indices[k],indices[k+1]],[indices[k+1],indices[k+2]],[indices[k+2],indices[k]]]){
    const key=Math.min(i,j)+':'+Math.max(i,j);if(seenEdges.has(key))continue;seenEdges.add(key)
    const rest=Math.hypot(original[i*3]-original[j*3],original[i*3+1]-original[j*3+1]);if(rest>1e-8)materialEdges.push({i,j,rest})
@@ -135,8 +135,10 @@ export function createChunkGeometry(w:number,h:number){
    for(let i=0;i<p.count;i++){const y=original[i*3+1],row=rowIndices[i],col=columns.indices[i],a=samples[rows?row:0][col],off=original[i*3+2]*depth,offsetNormal=slipNormals?.[rows?row:0]??a;let x=a.x-offsetNormal.tz*off,z=a.z+offsetNormal.tx*off;const layerIndex=Math.round((original[i*3+2]+.5)*2),layer=layers?.[layerIndex];if(layer){const p=layerSamples![layerIndex][col];x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
    // Translate complete material cross-sections rather than clipping only
    // the bottom vertices. Preserve local thickness while clearing the stack.
-   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}if(slidingLayers){const minimum=elasticSections?lifts.slice():null;spreadClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,1-weight)
-      if(minimum&&weight<1){const edges:SectionEdge[]=getMaterialEdges().map(({i,j,rest})=>({a:liftKeys[i],b:liftKeys[j],dx:p.getX(j)-p.getX(i),dy:p.getY(j)-p.getY(i),dz:p.getZ(j)-p.getZ(i),rest}));solveSectionClearance(lifts,minimum,edges,49,1-weight)}
+   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}if(slidingLayers){const minimum=elasticSections?(minimumScratch??=new Float64Array(lifts.length)):null;if(minimum)minimum.set(lifts);spreadClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,1-weight)
+      if(minimum&&weight<1){const topology=getMaterialEdges(),edges=sectionEdges??=topology.map(({i,j,rest})=>({a:liftKeys[i],b:liftKeys[j],dx:0,dy:0,dz:0,rest}))
+        for(let k=0;k<edges.length;k++){const {i,j}=topology[k],edge=edges[k];edge.dx=p.getX(j)-p.getX(i);edge.dy=p.getY(j)-p.getY(i);edge.dz=p.getZ(j)-p.getZ(i)}
+        solveSectionClearance(lifts,minimum,edges,49,1-weight,6,sectionWorkspace??=createSectionWorkspace(lifts.length))}
     }for(let i=0;i<p.count;i++){const lift=lifts[liftKeys[i]];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
    const repeat=paperEdgeRepeat(w,depth,leafPitch);if(repeat!==lastRepeat){lastRepeat=repeat;for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true}
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
@@ -148,7 +150,7 @@ export function createChunkGeometry(w:number,h:number){
      // blending. Apply only local curl displacement, never extra thickness.
      for(const i of handoffVertices[side-4]){
        const y=original[i*3+1],col=columns.indices[i],u=columns.u[col],row=rowIndices[i],c=rows?.[row]??chain,a=samples[rows?row:0][col]
-       const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress)
+       const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress,slidingLayers)
        hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],Math.max(floor,clearance?.(p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003)??-Infinity,p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003))
      }
      hp.needsUpdate=true;handoff.computeVertexNormals();handoff.computeBoundingSphere();handoff.computeBoundingBox()

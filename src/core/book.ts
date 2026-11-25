@@ -162,7 +162,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       }
       else {const slot=pages.slots[i],leaf=slot.leaf;// Fully open boards are coplanar, and the active leaf basis has no Y rotation.
         // Keep the deformed surface above their inner face; shader and CPU picker share this floor.
-        const chain=liftChunkChain(turningChain(pageWidth,turnP,flex,right,left,readingIndex/count),feedbackLift,turnP,preserveArc),floor=last===180?base+clearance-anchor.z:-1e6;recordCurve(chain);slot.gpu.update(turnP,flex,materialCurlAmount(turn.curlAmount??0,material.flex,preserveArc),turn.grip??0,turn.grabU??1,chain,floor);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
+        const chain=liftChunkChain(turningChain(pageWidth,turnP,flex,right,left,readingIndex/count),feedbackLift,turnP,preserveArc),floor=last===180?base+clearance-anchor.z:-1e6;recordCurve(chain);slot.gpu.update(turnP,flex,materialCurlAmount(turn.curlAmount??0,material.flex,preserveArc),turn.grip??0,turn.grabU??1,chain,floor,preserveArc);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
     })
   }
   const setReading=(index:number,turns:ActiveLeaf[])=>{const next=Math.min(leafCount(current),Math.max(0,index)),changed=next!==readingIndex;const key=[next,...turns.map(t=>[t.direction,t.span??1].join(':'))].join('|');if(key!==correctionKey||!turns.length)trialLift=0;correctionKey=key;readingIndex=next;activeTurns=turns;if(changed&&last>0&&last<180){const angle=last;last=-1;setOpening(angle)}else refreshPages()}

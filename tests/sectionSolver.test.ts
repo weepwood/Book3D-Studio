@@ -8,3 +8,12 @@ it('projected section solver reduces discrete strain without breaking floor or a
  expect(sectionScore(lifts,edges)).toEqual(r.final)
  const end=lifts.slice();solveSectionClearance(lifts,minimum,edges,4,0);expect(lifts).toEqual(end)
 })
+
+import {createSectionWorkspace} from '../src/core/sectionSolver'
+it('reused solver workspace produces independent identical results',()=>{
+ const edges:SectionEdge[]=[{a:0,b:1,dx:.1,dy:0,dz:0,rest:.1}],minimum=new Float64Array([0,.05]),a=new Float64Array([0,.3]),b=a.slice(),workspace=createSectionWorkspace(2)
+ const expected=solveSectionClearance(a,minimum,edges,2,1)
+ solveSectionClearance(new Float64Array([0,.9]),minimum,edges,2,.5,6,workspace)
+ const actual=solveSectionClearance(b,minimum,edges,2,1,6,workspace)
+ expect(b).toEqual(a);expect(actual).toEqual(expected)
+})
