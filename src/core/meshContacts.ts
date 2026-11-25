@@ -3,7 +3,7 @@ import {MeshBVH} from 'three-mesh-bvh'
 import {triangleContact} from './triangleContact'
 import {isBindingContact} from './contactCorrection'
 type IndexedBVH=MeshBVH & {resolveTriangleIndex(i:number):number}
-type Snapshot={source:T.BufferGeometry;geometry:T.BufferGeometry;tree:IndexedBVH;uses:number}
+type Snapshot={source:T.BufferGeometry;geometry:T.BufferGeometry;tree:IndexedBVH;uses:number;index:T.BufferAttribute|null;indexVersion:number;positionCount:number;groups:string}
 function writeSnapshot(mesh:T.Mesh,worldToBook:T.Matrix4,geometry:T.BufferGeometry){
  const position=geometry.getAttribute('position'),v=new T.Vector3(),matrix=worldToBook.clone().multiply(mesh.matrixWorld)
  for(let i=0;i<position.count;i++){mesh.getVertexPosition(i,v).applyMatrix4(matrix);position.setXYZ(i,v.x,v.y,v.z)}
@@ -20,10 +20,11 @@ export class ContactCache {
  builds=0;refits=0
  snapshot(mesh:T.Mesh,matrix:T.Matrix4){
   let entry=this.entries.get(mesh)
-  if(entry&&entry.source===mesh.geometry&&entry.uses<32){writeSnapshot(mesh,matrix,entry.geometry);entry.tree.refit();entry.uses++;this.refits++;return entry}
+  const source=mesh.geometry,index=source.index,indexVersion=index?.version??-1,positionCount=source.getAttribute('position').count,groups=source.groups.map(g=>[g.start,g.count,g.materialIndex].join(':')).join('|')
+  if(entry&&entry.source===source&&entry.index===index&&entry.indexVersion===indexVersion&&entry.positionCount===positionCount&&entry.groups===groups&&entry.uses<32){writeSnapshot(mesh,matrix,entry.geometry);entry.tree.refit();entry.uses++;this.refits++;this.entries.delete(mesh);this.entries.set(mesh,entry);return entry}
   if(entry){entry.geometry.dispose();this.entries.delete(mesh)}
   if(this.entries.size>=32){const key=this.entries.keys().next().value!;this.entries.get(key)!.geometry.dispose();this.entries.delete(key)}
-  const geometry=snapshotMesh(mesh,matrix);entry={source:mesh.geometry,geometry,tree:new MeshBVH(geometry,{indirect:true}) as IndexedBVH,uses:0};this.entries.set(mesh,entry);this.builds++;return entry
+  const geometry=snapshotMesh(mesh,matrix);entry={source:mesh.geometry,geometry,tree:new MeshBVH(geometry,{indirect:true}) as IndexedBVH,uses:0,index,indexVersion,positionCount,groups};this.entries.set(mesh,entry);this.builds++;return entry
  }
  dispose(){for(const e of this.entries.values())e.geometry.dispose();this.entries.clear()}
 }

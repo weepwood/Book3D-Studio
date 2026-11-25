@@ -105,6 +105,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   const settledDropMs=STACK_SETTLE_MS
   const measureCurve=new URLSearchParams(location.search).get('curve')==='1'
   const enableSlip=new URLSearchParams(location.search).get('slip')!=='0'
+  const elasticSections=new URLSearchParams(location.search).get('elastic')==='1'
   const curveQuality={samples:0,maxRelativeLengthError:0,maxRootError:0,maxCurvature:0,maxEnergyPerWidth:0}
   const recordCurve=(chain:Chain)=>{if(!measureCurve)return;const m=curveMetrics(chain,material.rigidity);curveQuality.samples++;curveQuality.maxRelativeLengthError=Math.max(curveQuality.maxRelativeLengthError,m.relativeLengthError);curveQuality.maxRootError=Math.max(curveQuality.maxRootError,m.rootError);curveQuality.maxCurvature=Math.max(curveQuality.maxCurvature,m.maxCurvature);curveQuality.maxEnergyPerWidth=Math.max(curveQuality.maxEnergyPerWidth,m.bendingEnergy)}
   let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurns:ActiveLeaf[]=[],dropMs=settledDropMs,stackKey='',refreshCount=0,stackPoseCount=0
@@ -157,7 +158,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
           const at=anchorBetween(layerFrom,layerTo,turnP)
           return {chain:liftChunkChain(turningChain(pageWidth,turnP,flex,cachedLayer(dr,rightCompression),cachedLayer(dl,leftCompression,-1),readingIndex/count),lift,turnP,preserveArc),x:at.x-anchor.x,z:at.z-anchor.z}
         }):undefined
-        const center=withLift(turnP);recordCurve(center);pages.chunkShape.pose(center,layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:materialCurlAmount(turn.handoffCurl,material.flex,preserveArc),grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+clearance-anchor.z:-Infinity,last===180?x=>Math.max(rightHeight?.(x+anchor.x)??-Infinity,leftHeight?.(x+anchor.x)??-Infinity)+clearance-anchor.z:undefined,pitch,preserveArc&&enableSlip);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
+        const center=withLift(turnP);recordCurve(center);pages.chunkShape.pose(center,layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:materialCurlAmount(turn.handoffCurl,material.flex,preserveArc),grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+clearance-anchor.z:-Infinity,last===180?x=>Math.max(rightHeight?.(x+anchor.x)??-Infinity,leftHeight?.(x+anchor.x)??-Infinity)+clearance-anchor.z:undefined,pitch,preserveArc&&enableSlip,elasticSections);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
       }
       else {const slot=pages.slots[i],leaf=slot.leaf;// Fully open boards are coplanar, and the active leaf basis has no Y rotation.
         // Keep the deformed surface above their inner face; shader and CPU picker share this floor.

@@ -34,6 +34,7 @@ on:
       - 'src/core/paperMaterial.ts'
       - 'src/core/curveMetrics.ts'
       - 'src/core/surfaceMetrics.ts'
+      - 'src/core/sectionSolver.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
@@ -130,7 +131,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts browser-tests/handoff-budget.spec.ts browser-tests/material-engine.spec.ts
+      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts browser-tests/handoff-budget.spec.ts browser-tests/material-engine.spec.ts browser-tests/resource-stability.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
