@@ -6,9 +6,9 @@ export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {d
 // Independent bounded-velocity adapter. Single turns, queued turns and
 // gesture releases share the same integrator; only speed budgets differ.
 // Velocity is always normalized progress per second, including after retarget.
-export function stepTurn(progress:number,velocity:number,target:number,dt:number,duration:number,queued=false,initialAcceleration?:number){
+export function stepTurn(progress:number,velocity:number,target:number,dt:number,duration:number,queued=false,initialAcceleration?:number,terminalGain?:number){
  const goal=clamp(target),scale=.85/Math.max(.3,duration)
- const maxSpeed=(queued?7:2.8)*scale,acceleration=(queued?75:25)*scale*scale,nearGain=(queued?28:10)*scale
+ const maxSpeed=(queued?7:2.8)*scale,acceleration=(queued?75:25)*scale*scale,nearGain=(terminalGain??(queued?28:10))*scale
  let p=clamp(progress),v=velocity,a=initialAcceleration??0,remaining=clamp(dt,0,.25)
  while(remaining>1e-8){
   const h=Math.min(1/120,remaining);remaining-=h
@@ -27,6 +27,7 @@ export function stepTurn(progress:number,velocity:number,target:number,dt:number
 // is deliberately dropped rather than teleporting through missing frames.
 export class MotionClock {
  private remainder=0
+ private debt=0
  advance(dt:number){
   const quantum=1/120
   this.remainder+=clamp(dt,0,.05)
@@ -34,7 +35,18 @@ export class MotionClock {
   this.remainder=Math.max(0,this.remainder-steps*quantum)
   return steps*quantum
  }
- reset(){this.remainder=0}
+ // Keep a bounded recovery debt; normal frames use their real elapsed
+ // time. Never advance an unbounded stalled/background interval.
+ advanceInteractive(elapsed:number){
+  const current=clamp(elapsed,0,.05)
+  this.debt=Math.min(.075,this.debt+Math.max(0,Math.min(.125,elapsed)-current))
+  const extra=Math.min(this.debt,.025);this.debt-=extra
+  this.remainder+=current+extra
+  const steps=Math.min(9,Math.floor((this.remainder+1e-10)*120))
+  this.remainder=Math.max(0,this.remainder-steps/120)
+  return steps/120
+ }
+ reset(){this.remainder=0;this.debt=0}
 }
 // Exact critically damped tracking; a new target preserves incoming velocity.
 export function trackDrag(progress:number,velocity:number,target:number,dt:number,omega=45){

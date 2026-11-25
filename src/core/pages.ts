@@ -3,7 +3,7 @@ import type {BookConfig} from './schema'
 import {clamp} from './pagePhysics'
 import {makeChain,rollPoint} from './pageChain'
 import {createGpuPage} from './pageGpu'
-import {activeSpan,type ActiveLeaf} from './pageWindow'
+import {activeSpan,LIVE_LEAF_LIMIT,type ActiveLeaf} from './pageWindow'
 import {createChunkGeometry} from './stackGeometry'
 import {PRESS_SCENE} from './referenceScene'
 import {applyPaperShading} from './paperShading'
@@ -88,9 +88,10 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   const slots:Array<{leaf:T.Group;front:T.MeshPhongMaterial;back:T.MeshPhongMaterial;gpu:ReturnType<typeof createGpuPage>;fm:T.Mesh;bm:T.Mesh}>=[]
   left.name='Reading page left';right.name='Reading page right'
   for(const mesh of [left,right]){mesh.castShadow=true;mesh.receiveShadow=true}
+  let sharedGeometry:T.BufferGeometry|null=null
   function slot(i:number){
     if(slots[i])return slots[i]
-    const geometry=createCurlGeometry(w,h),gpu=createGpuPage(w,h)
+    const geometry=sharedGeometry??=createCurlGeometry(w,h),gpu=createGpuPage(w,h)
     const front=paperMat(T.FrontSide),back=paperMat(T.BackSide)
     gpu.attach(front);gpu.attach(back)
     const leaf=new T.Group(),fm=new T.Mesh(geometry,front),bm=new T.Mesh(geometry,back)
@@ -118,28 +119,42 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     const key=generation+':'+index+':'+flip
     const cached=cache.get(key)
     if(cached){hits++;cache.delete(key);cache.set(key,cached);return cached.texture}
-    misses++;const texture=pageTexture(config,index,flip,invalidate);cache.set(key,{texture,bytes:Number(texture.userData.estimatedBytes)});return texture
+    misses++;const started=performance.now(),texture=pageTexture(config,index,flip,invalidate),elapsed=performance.now()-started;textureBuildMs+=elapsed;peakTextureBuildMs=Math.max(peakTextureBuildMs,elapsed);cache.set(key,{texture,bytes:Number(texture.userData.estimatedBytes)});return texture
   }
   let idle:number|null=null,idleNative=false,disposed=false,preloadKey=''
+  let prefetched=0,prefetchUploads=0,textureBuildMs=0,peakTextureBuildMs=0
+  const pooled=new URLSearchParams(location.search).get('readingPool')!=='0'
+  let poolIdle:number|null=null
+  function cancelPool(){if(poolIdle!==null){window.cancelIdleCallback(poolIdle);poolIdle=null}}
+  function preparePool(){
+    if(!pooled||disposed||slots.length>=LIVE_LEAF_LIMIT||poolIdle!==null||typeof window.requestIdleCallback!=='function')return
+    poolIdle=window.requestIdleCallback(deadline=>{poolIdle=null;if(disposed)return;if(deadline.timeRemaining()>=5){const s=slot(slots.length);warm?.(s.gpu.texture)}preparePool()})
+  }
   const cancelPreload=()=>{if(idle!==null){if(idleNative)window.cancelIdleCallback(idle);else window.clearTimeout(idle);idle=null}}
-  function preload(index:number,count:number){
-    const key=generation+':'+index+':'+count;if(key===preloadKey)return;preloadKey=key;cancelPreload()
+  function preload(index:number,count:number,direction?:1|-1){
+    const key=generation+':'+index+':'+count+':'+(direction??0);if(key===preloadKey)return;preloadKey=key;cancelPreload()
     const queue:[number,boolean][]=[]
-    for(const direction of [1,-1] as const){
-      if(direction===1?index>=count:index<=0)continue
-      const faces=turnFaces(index,direction);queue.push([faces.front,false],[faces.back,true])
+    const add=(face:number,flip=false)=>{if(!queue.some(([f,b])=>f===face&&b===flip))queue.push([face,flip])}
+    const append=(at:number,d:1|-1)=>{
+      if(at<0||at>count||(d===1?at>=count:at<=0))return
+      const faces=turnFaces(at,d);add(faces.front);add(faces.back,true)
+      const revealed=pageFaces(at+d,count);add(d===1?revealed.right:revealed.left)
     }
-    const next=()=>{
+    if(direction){append(index,direction);if(pooled)append(index+direction,direction)}
+    else{append(index,1);append(index,-1);if(pooled)append(index+1,1)}
+    const next=(deadline?:IdleDeadline)=>{
       idle=null;if(disposed||!queue.length)return
-      const [face,flip]=queue.shift()!;const texture=acquire(face,flip)
-      trim();if(warm&&!texture.userData.disposed)warm(texture);schedule()
+      if(deadline&&deadline.timeRemaining()<5){schedule();return}
+      const [face,flip]=queue.shift()!;const texture=acquire(face,flip);prefetched++
+      trim();if(warm&&!texture.userData.disposed&&warm(texture))prefetchUploads++
+      schedule()
     }
-    const schedule=()=>{if(!queue.length)return;idleNative=typeof window.requestIdleCallback==='function';idle=idleNative?window.requestIdleCallback(next):window.setTimeout(next,32)}
+    const schedule=()=>{if(!queue.length)return;idleNative=typeof window.requestIdleCallback==='function';idle=idleNative?window.requestIdleCallback(next):window.setTimeout(()=>next(),32)}
     schedule()
   }
   // Allocate just one representative hidden slot; compile traverses hidden
   // objects, so no visible pose or reading state needs to be changed.
-  function prepareShaders(){const s=slot(0);for(const mat of [s.front,s.back])if(!mat.map){materials.add(mat);mat.map=placeholder;mat.needsUpdate=true}}
+  function prepareShaders(){const s=slot(0);for(const mat of [s.front,s.back])if(!mat.map){materials.add(mat);mat.map=placeholder;mat.needsUpdate=true}return s}
   function assign(mat:T.MeshPhongMaterial,index:number,flip=false){
     const key=generation+':'+index+':'+flip
     if(keys.get(mat)===key)return
@@ -153,7 +168,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   }
   function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].map(m=>!!m.map&&!m.map.userData.pending&&(!warm||warm(m.map))).every(Boolean)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
-    if(active.length){cancelPreload();preloadKey=''}else preload(index,count)
+    if(active.length){if(pooled&&!(active[0].span&&active[0].span>1)&&!active[0].opening)preload(index+active[0].direction*activeSpan(active),count,active[0].direction);else{cancelPreload();preloadKey=''}}else{preload(index,count);preparePool()}
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)
     assign(right.material,direction===1?next.right:faces.right)
@@ -169,5 +184,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(let i=block?0:active.length;i<slots.length;i++){const s=slots[i];s.leaf.visible=false;unpin(s.front);unpin(s.back)}
     trim()
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,cancelPreload,textureMetrics:()=>({size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,cancelPreload:()=>{cancelPreload();cancelPool();preloadKey=''},textureMetrics:()=>({slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }
