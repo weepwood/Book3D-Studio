@@ -253,7 +253,7 @@ export class BookRuntime {
       this.contactWorker??=new ContactWorkerClient(reply=>{if(!this.disposed&&!this.contextLost)this.host.dataset.workerCollision=JSON.stringify({...reply,dropped:this.contactWorker?.dropped??0})})
       this.contactWorker.request(()=>this.book.workerContactSnapshot())
     }
-    this.perf?.phase('diagnostics');this.host.dataset.geometryRevision=String(this.geometryRevision);this.host.dataset.textureCache=JSON.stringify(this.book.textureMetrics());this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.perf?.phase('metrics');this.perf?.finish(this.turn&&!this.turn.preview?'active':'idle')
+    this.perf?.phase('diagnostics');this.host.dataset.geometryRevision=String(this.geometryRevision);if(this.perf)this.host.dataset.geometryMetrics=JSON.stringify(this.book.geometryMetrics());this.host.dataset.textureCache=JSON.stringify(this.book.textureMetrics());this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.perf?.phase('metrics');this.perf?.finish(this.turn&&!this.turn.preview?'active':'idle')
     if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){

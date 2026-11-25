@@ -86,3 +86,11 @@ PR #27 的 d9008d5 已通过 quick/capture/matched/triangle-contact/workspace，
 单叶落页在提交阅读索引前保留一次完整终点渲染；?handoff=1 采集15个一致材质坐标在活动CPU代理和切换后静止面的世界坐标，默认规格前后四次交接最大误差1.11e-14mm（浮点误差），新增0.01mm门禁。此非 GPU 像素对比，不覆盖所有厚块、多页中间轨迹及法线连续性。24项缓存同时限制192MiB保守估算（最多三张RGBA Canvas及一份带mipmap GPU副本）；纹理上限655360像素，普通比例保留原分辨率，极端宽高比按比例缩小实际栅格并保持逻辑排版。隐藏活动材质改用共享1像素占位并解除原纹理引用，LRU不回收使用中纹理。2000页测试19项、197916160字节（约188.75MiB）、14次淘汰、仍在预算内。该数值不含驱动额外开销、异步解码瞬态或其他几何显存。
 
 本机122/122单测、类型、生产构建通过；14项真实M4硬件浏览器回归通过（约1.2min），包含原 reader/viewport、高页数与新增端点测试。独立软件GPU相机专项通过。原始采样：docs/benchmarks/v0.9-handoff-budget-m4.json。新门禁和最终全量远程CI需核对，仍不提前合并或发布。
+
+## 第三轮：书芯曲面引擎与厚块截面约束
+
+- `createStackGeometry` 按精确 Float32 原始材料列复用 Hermite 采样；`createChunkGeometry` 按行与材料列复用采样及端点层曲线。保留实际网格拓扑、法线、边界计算及碰撞检测；纸边 UV 重复密度未变化时不再上传。
+- 厚块地板约束原来逐顶点截断 Z，导致局部厚度压扁；现在与书芯清距统一按完整材料截面最大所需位移平移。同一截面的相对坐标保持不变（Float32 舍入除外），并非全姿态零碰撞证明。
+- 重力落页进度在 700ms 饱和，此后不再因无效 elapsed 变化触发几何刷新；保留实际开合和活动翻页刷新。删除初建重复 refresh 及厚块分支未使用曲线求值。?perf=1 增加 geometryMetrics 记录刷新次数、静态书芯更新次数、曲线缓存数量。
+- M4 Node 五轮微基准（每轮300次，预热100次）：静态书芯中位0.08442→0.06354ms，厚块0.22055→0.18241ms，扭曲厚块0.53172→0.46710ms。仅几何函数耗时，包含截面修正算法变化，非GPU或整帧性能。复测：在各自源码树使用同一 scripts/model-geometry-bench.ts，执行 `./node_modules/.bin/esbuild scripts/model-geometry-bench.ts --bundle --platform=node --format=cjs --outfile=/tmp/book3d-geometry-bench.cjs && node /tmp/book3d-geometry-bench.cjs`。原始样本见 benchmarks/v0.9-model-geometry-m4.json。
+- 验收：125/125 单元测试、类型检查、生产构建、M4 Edge 10/10 专项浏览器（66.36s）通过。覆盖厚块正反向与重抓、视野、纸页交接、极端物理规格、2000页、实体接触诊断和 BVH 候选反馈。远程最终 CI 尚需验收；暂不合并或发布。
