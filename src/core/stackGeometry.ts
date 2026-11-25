@@ -37,7 +37,7 @@ export function turningChain(width:number,p:number,flex:number,right:Chain,left:
 }
 // Physical reference leaf pitch .0234 in page width 15.6; two alternating
 // bands per repeated tile. Density stays stable when the split changes.
-export function paperEdgeRepeat(width:number,depth:number){return Math.max(0,depth)/(2*.0234/15.6*Math.max(width,1e-8))}
+export function paperEdgeRepeat(width:number,depth:number,leafPitch?:number){return Math.max(0,depth)/(2*Math.max(1e-8,leafPitch??(.0234/15.6*width)))}
 export function stackSection(layers:Chain[],depth:number,compression:number,u:number){
  const bottom=sampleChain(layers[0],u).z,top=depth*(1-clamp(compression))+sampleChain(layers[layers.length-1],u).z
  return {bottom,top,thickness:top-bottom}
@@ -46,7 +46,7 @@ export function createStackGeometry(w:number,h:number,depthSegments=2){
  const g=new T.BoxGeometry(w,h,1,48,1,depthSegments),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),originalUV=Float32Array.from(uv.array),normal=g.getAttribute('normal'),edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
  // Original material depth coordinate survives all bending and compression.
  const depthCoord=new T.Float32BufferAttribute(Array.from({length:p.count},(_,i)=>original[i*3+2]+.5),1);g.setAttribute('paperDepth',depthCoord)
- return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],fraction=clamp(sign===1?z+.5:.5-z),layer=fraction*(layers.length-1),lo=Math.min(layers.length-2,Math.floor(layer)),q=layer-lo,a=sampleChain(layers[lo],x/w+.5),b=sampleChain(layers[lo+1],x/w+.5);p.setXYZ(i,T.MathUtils.lerp(a.x,b.x,q)-w/2,y,z*depth+sign*(T.MathUtils.lerp(a.z,b.z,q)-depth*clamp(compression)*fraction))}const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+ return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0,leafPitch?:number){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],fraction=clamp(sign===1?z+.5:.5-z),layer=fraction*(layers.length-1),lo=Math.min(layers.length-2,Math.floor(layer)),q=layer-lo,a=sampleChain(layers[lo],x/w+.5),b=sampleChain(layers[lo+1],x/w+.5);p.setXYZ(i,T.MathUtils.lerp(a.x,b.x,q)-w/2,y,z*depth+sign*(T.MathUtils.lerp(a.z,b.z,q)-depth*clamp(compression)*fraction))}const repeat=paperEdgeRepeat(w,depth,leafPitch);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
 }
 // Interpolate the material depth on the actual hit triangle, not world Z.
 export function pickedDepth(g:T.BufferGeometry,face:{a:number;b:number;c:number},point:T.Vector3,sign:1|-1){
@@ -94,13 +94,14 @@ export function createChunkGeometry(w:number,h:number){
  const faceIndices=[4,5].map(face=>{const group=g.groups.find(x=>x.materialIndex===face)!;return Array.from(g.index!.array.slice(group.start,group.start+group.count))})
  const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
  const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number){
+ const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),liftKeys=Int32Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48));const handoffVertices=faceIndices.map(indices=>[...new Set(indices)]);let lastRepeat=NaN
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
    for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,Math.max(floor,z))}
    // Translate complete material cross-sections rather than clipping only
    // the bottom vertices. Preserve local thickness while clearing the stack.
-   if(clearance){const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),key=(i:number)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48);for(let i=0;i<p.count;i++){const k=key(i);lifts[k]=Math.max(lifts[k],clearance(p.getX(i))-p.getZ(i))}for(let i=0;i<p.count;i++){const lift=lifts[key(i)];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
-   const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true
+   if(clearance){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],clearance(p.getX(i))-p.getZ(i))}for(let i=0;i<p.count;i++){const lift=lifts[liftKeys[i]];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
+   const repeat=paperEdgeRepeat(w,depth,leafPitch);if(repeat!==lastRepeat){lastRepeat=repeat;for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true}
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
    if(overlay){
      const side=overlay.direction===1?4:5,sign=overlay.direction
@@ -108,7 +109,7 @@ export function createChunkGeometry(w:number,h:number){
      const hp=handoff.getAttribute('position');hp.array.set(p.array)
      // Overlay uses the same actual block face, including row twist and end
      // blending. Apply only local curl displacement, never extra thickness.
-     for(const i of new Set(faceIndices[side-4])){
+     for(const i of handoffVertices[side-4]){
        const y=original[i*3+1],u=original[i*3]/w+.5,row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),c=rows?.[row]??chain,a=sampleChain(c,u)
        const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress)
        hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],Math.max(floor,clearance?.(p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003)??-Infinity,p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003))

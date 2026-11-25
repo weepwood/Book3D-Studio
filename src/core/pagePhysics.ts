@@ -3,32 +3,44 @@ import type {ChunkMotion} from './chunkMotion'
 export const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x))
 export type TurnState={direction:1|-1;progress:number;renderProgress:number;velocity:number;grip:number;preview:boolean;dragTarget:number;curlAmount:number;grabU:number;span?:number;chunkElapsed?:number;chunkGesture?:boolean;chunkMotion?:ChunkMotion;dragOrigin?:number}
 export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {direction,progress:0,renderProgress:0,velocity:0,grip:clamp(grip,-1,1),preview,dragTarget:0,curlAmount:0,grabU:1}}
-// Angular snap behavior observed in the reference. The editor duration remains an optional time scale.
+// Independent bounded-velocity adapter. Single turns, queued turns and
+// gesture releases share the same integrator; only speed budgets differ.
+// Velocity is always normalized progress per second, including after retarget.
 export function stepTurn(progress:number,velocity:number,target:number,dt:number,duration:number,queued=false){
-  const frames=clamp(dt,0,.25)*R.fps*.85/Math.max(.3,duration)
-  let angle=progress*Math.PI,speed=velocity*Math.PI/R.fps
-  const goal=clamp(target)*Math.PI
-  let remaining=frames
-  while(remaining>1e-8){
-    const f=Math.min(1,remaining);remaining-=f
-    const delta=goal-angle,distance=Math.abs(delta),sign=Math.sign(delta)
-    if(queued){const step=R.multiPageStep*f;if(distance<=step){angle=goal;speed=0}else{angle+=sign*step;speed=sign*R.multiPageStep}}
-    else{
-      const near=1-Math.min(distance/R.nearRange,1)
-      speed+=R.snapAcceleration*sign*Math.sin(Math.min(distance,Math.PI/2))*f
-      speed*=Math.pow(1-Math.min(.98,.4*R.damping+near*near*R.nearDamping),f)
-      // Local convergence guard: the reference damping/acceleration pair can
-      // crawl exponentially at the final few degrees, especially at a 2s
-      // editor duration on a software-rendered browser. Keep braking motion
-      // intact when moving away, then bound the approach time continuously.
-      const terminalSpeed=distance*.04*near*near
-      if(sign!==0&&speed*sign>=0&&Math.abs(speed)<terminalSpeed)speed=sign*terminalSpeed
-      angle=clamp(angle+speed*f,0,Math.PI)
-      if(angle===0||angle===Math.PI)speed=0
-    }
-    if(Math.abs(goal-angle)<R.settleAngle&&Math.abs(speed)<R.settleVelocity)return {progress:target,velocity:0,settled:true}
-  }
-  return {progress:angle/Math.PI,velocity:speed*R.fps/Math.PI,settled:false}
+ const goal=clamp(target),scale=.85/Math.max(.3,duration)
+ const maxSpeed=(queued?7:2.8)*scale,acceleration=(queued?75:25)*scale*scale,nearGain=(queued?28:10)*scale
+ let p=clamp(progress),v=velocity,remaining=clamp(dt,0,.25)
+ while(remaining>1e-8){
+  const h=Math.min(1/120,remaining);remaining-=h
+  const distance=goal-p,abs=Math.abs(distance)
+  // Leave braking headroom. A proportional terminal velocity avoids the
+  // abrupt endpoint stop of the previous constant-angle batch motion.
+  const desired=Math.sign(distance)*Math.min(maxSpeed,.85*Math.sqrt(2*acceleration*abs),nearGain*abs)
+  const before=v;v+=clamp(desired-v,-acceleration*h,acceleration*h)
+  const raw=p+(before+v)*h/2;p=clamp(raw)
+  if(raw!==p)v=0 // Physical endpoints are hard bounds, even on reversal.
+  if(Math.abs(goal-p)<.0015&&Math.abs(v)<.01)return {progress:goal,velocity:0,settled:true}
+ }
+ return {progress:p,velocity:v,settled:false}
+}
+// One bounded clock for active-page physics. Excess wall time after a stall
+// is deliberately dropped rather than teleporting through missing frames.
+export class MotionClock {
+ private remainder=0
+ advance(dt:number){
+  const quantum=1/120
+  this.remainder+=clamp(dt,0,.05)
+  const steps=Math.min(6,Math.floor((this.remainder+1e-10)/quantum))
+  this.remainder=Math.max(0,this.remainder-steps*quantum)
+  return steps*quantum
+ }
+ reset(){this.remainder=0}
+}
+// Exact critically damped tracking; a new target preserves incoming velocity.
+export function trackDrag(progress:number,velocity:number,target:number,dt:number,omega=45){
+ const t=clamp(dt,0,.05),goal=clamp(target),error=progress-goal,b=velocity+omega*error,e=Math.exp(-omega*t)
+ const raw=goal+(error+b*t)*e,p=clamp(raw),v=(velocity-omega*b*t)*e
+ return {progress:p,velocity:raw!==p?0:v}
 }
 export function followDrag(progress:number,target:number,dt:number){
   return progress+(clamp(target)-progress)*(1-Math.pow(R.dragRetention,clamp(dt,0,R.maxDt)*R.fps))

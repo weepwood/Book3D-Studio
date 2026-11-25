@@ -2,6 +2,7 @@ import * as T from 'three'
 import type { BookConfig } from './schema'
 import { bookDimensions, openingPose, coupledPageAngle, supportedCoverFlex, skinnedBoard, coverBoneAngles, BONE_COUNT } from './geometry'
 import {createPageLayer,leafCount,clamp01,easeTurn} from './pages'
+import {physicalBook} from './physicalBook'
 import {anchorBetween} from './pagePhysics'
 import {batchLayout,leafDepths,gravityDrop,activeSpan,chunkDepths,type ActiveLeaf} from './pageWindow'
 import {createStackGeometry,bindingCompression,bindingHeight,boundLayer,turningChain,poseSurface,edgeTriangleCenters,chunkRowProgress,liftChunkChain,chunkEndpointWeight,stackSection,pickedDepth,stackHeightSampler} from './stackGeometry'
@@ -27,7 +28,7 @@ function canvas(w:number,h:number) {
   return {el,ctx}
 }
 function cover(c:BookConfig,face:'cover'|'back'|'spine'='cover') {
-  const width=face==='spine'?Math.max(64,Math.round(1024*c.thickness/c.height)):768
+  const width=face==='spine'?Math.max(64,Math.round(1024*physicalBook(c).thickness/c.height)):768
   const {el,ctx}=canvas(width,face==='spine'?1024:Math.round(768*c.height/c.width))
   ctx.fillStyle=c.coverColor;ctx.fillRect(0,0,el.width,el.height)
   if(c.finish==='cloth'){
@@ -60,7 +61,8 @@ function bump(){
 }
 export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Texture)=>boolean){
   const root=new T.Group()
-  const {w,h,d,t,inset,gutterInset,pageWidth,pageCenter,pageHeight,pageDepth,coverZ}=bookDimensions(c.width,c.height,c.thickness,c.boardThickness,c.pageInset)
+  const {w,h,t,inset,gutterInset,pageWidth,pageCenter,pageHeight}=bookDimensions(c.width,c.height,physicalBook(c).thickness,c.boardThickness,c.pageInset)
+  let pageDepth=physicalBook(c).core/100,coverZ=(pageDepth+t)/2
   const radius=c.cornerRadius/100
   const coverMap=cover(c);coverMap.userData.invalidate=invalidate
   const cloth=c.finish==='cloth'?bump():null
@@ -107,21 +109,21 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   const refreshPages=()=>{
     const count=leafCount(current),direction=activeTurns[0]?.direction??1
     const block=(activeTurns[0]?.span??1)>1,layout=batchLayout(readingIndex,count,pageDepth,direction,activeSpan(activeTurns),block),leftDepth=layout.left,rightDepth=layout.right
-    const base=-coverZ+t/2
+    const base=-coverZ+t/2,offset=Math.min(.002,layout.unit*.15),clearance=Math.min(.001,layout.unit*.1),pitch=current.thicknessMode==='automatic'?layout.unit:undefined
     lower.visible=rightDepth>.0001;lower.position.z=base+rightDepth/2
     upper.visible=leftDepth>.0001;upper.position.z=-t/2-leftDepth/2
     leftDepthNow=leftDepth;rightDepthNow=rightDepth;leftCount=Math.round(leftDepth/layout.unit);rightCount=Math.round(rightDepth/layout.unit)
     const open=easeTurn(clamp01((last-90)/90)),leftDrop=gravityDrop(dropMs,0,Math.max(1,Math.min(6,leftCount))),rightDrop=gravityDrop(dropMs,0,Math.max(1,Math.min(6,rightCount)))
     leftCompression=bindingCompression(open*leftDrop,current.pageCoupling,pageWidth,pageDepth)
     rightCompression=bindingCompression(open*rightDrop,current.pageCoupling,pageWidth,pageDepth)
-    const key=[leftDepth,rightDepth,leftCompression,rightCompression].join(':')
+    const key=[leftDepth,rightDepth,leftCompression,rightCompression,pitch].join(':')
     if(key!==stackKey){
       stackKey=key;leftLayers=[0,.25,.5,.75,1].map(f=>cachedLayer(leftDepth*f,leftCompression));rightLayers=[0,.25,.5,.75,1].map(f=>cachedLayer(rightDepth*f,rightCompression))
-      lowerShape.pose(rightLayers,rightDepth,1,rightCompression);upperShape.pose(leftLayers,leftDepth,-1,leftCompression)
+      lowerShape.pose(rightLayers,rightDepth,1,rightCompression,pitch);upperShape.pose(leftLayers,leftDepth,-1,leftCompression,pitch)
       poseSurface(pages.right.geometry,rightLayers[rightLayers.length-1],false);poseSurface(pages.left.geometry,leftLayers[leftLayers.length-1],true)
     }
-    pages.right.position.z=base+bindingHeight(rightDepth,rightCompression)+.002
-    pages.left.position.z=-t/2-bindingHeight(leftDepth,leftCompression)-.002
+    pages.right.position.z=base+bindingHeight(rightDepth,rightCompression)+offset
+    pages.left.position.z=-t/2-bindingHeight(leftDepth,leftCompression)-offset
     // Fully open: both stationary stacks are height fields in root coordinates.
     const rightHeight=block&&last===180&&rightDepth>.0001?stackHeightSampler(rightLayers[rightLayers.length-1],-w/2+gutterInset,base+bindingHeight(rightDepth,rightCompression),1):null
     const leftHeight=block&&last===180&&leftDepth>.0001?stackHeightSampler(leftLayers[leftLayers.length-1],pagePivot.position.x-gutterInset,pagePivot.position.z+t/2+bindingHeight(leftDepth,leftCompression),-1):null
@@ -129,8 +131,8 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     pages.pose(readingIndex,count,active)
     active.forEach((turn,i)=>{
       const turnP=direction===1?turn.progress:1-turn.progress,depths=block?chunkDepths(layout):leafDepths(layout,direction,i)
-      const from={x:-w/2+gutterInset,z:base+bindingHeight(depths.right,rightCompression)+.002}
-      const lx=gutterInset,lz=-t/2-bindingHeight(depths.left,leftCompression)-.002,a=pagePivot.rotation.y
+      const from={x:-w/2+gutterInset,z:base+bindingHeight(depths.right,rightCompression)+offset}
+      const lx=gutterInset,lz=-t/2-bindingHeight(depths.left,leftCompression)-offset,a=pagePivot.rotation.y
       const to={x:pagePivot.position.x+lx*Math.cos(a)+lz*Math.sin(a),z:pagePivot.position.z-lx*Math.sin(a)+lz*Math.cos(a)}
       const anchor=anchorBetween(from,to,turnP)
       const right=cachedLayer(depths.right,rightCompression),left=cachedLayer(depths.left,leftCompression,-1)
@@ -142,16 +144,16 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
         const weight=chunkEndpointWeight(turnP)*(1-Math.min(1,turn.chunkLift??0))
         const layers=weight>0?[0,.5,1].map(q=>{
           const dr=layout.right+layout.moving*q,dl=layout.left+layout.moving*(1-q)
-          const layerFrom={x:from.x,z:base+bindingHeight(dr,rightCompression)+.002},layerLz=-t/2-bindingHeight(dl,leftCompression)-.002
+          const layerFrom={x:from.x,z:base+bindingHeight(dr,rightCompression)+offset},layerLz=-t/2-bindingHeight(dl,leftCompression)-offset
           const layerTo={x:pagePivot.position.x+lx*Math.cos(a)+layerLz*Math.sin(a),z:pagePivot.position.z-lx*Math.sin(a)+layerLz*Math.cos(a)}
           const at=anchorBetween(layerFrom,layerTo,turnP)
           return {chain:liftChunkChain(turningChain(pageWidth,turnP,current.pageCurl,cachedLayer(dr,rightCompression),cachedLayer(dl,leftCompression,-1),readingIndex/count),lift,turnP),x:at.x-anchor.x,z:at.z-anchor.z}
         }):undefined
-        pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+.001-anchor.z:-Infinity,last===180?x=>Math.max(rightHeight?.(x+anchor.x)??-Infinity,leftHeight?.(x+anchor.x)??-Infinity)+.001-anchor.z:undefined);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
+        pages.chunkShape.pose(withLift(turnP),layout.moving,row,layers,weight,turn.handoffCurl===undefined?undefined:{direction,progress:turnP,curl:turn.handoffCurl,grip:turn.grip??0,grabU:turn.grabU??1},last===180?base+clearance-anchor.z:-Infinity,last===180?x=>Math.max(rightHeight?.(x+anchor.x)??-Infinity,leftHeight?.(x+anchor.x)??-Infinity)+clearance-anchor.z:undefined,pitch);pages.chunk.position.set(anchor.x,0,anchor.z);pages.chunk.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)
       }
       else {const slot=pages.slots[i],leaf=slot.leaf;// Fully open boards are coplanar, and the active leaf basis has no Y rotation.
         // Keep the deformed surface above their inner face; shader and CPU picker share this floor.
-        const floor=last===180?base+.001-anchor.z:-1e6;slot.gpu.update(turnP,current.pageCurl,turn.curlAmount??0,turn.grip??0,turn.grabU??1,chain,floor);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
+        const floor=last===180?base+clearance-anchor.z:-1e6;slot.gpu.update(turnP,current.pageCurl,turn.curlAmount??0,turn.grip??0,turn.grabU??1,chain,floor);leaf.position.set(anchor.x,0,anchor.z);leaf.rotation.y=turnP*(pagePivot.rotation.y+Math.PI)}
     })
   }
   const setReading=(index:number,turns:ActiveLeaf[])=>{const next=Math.min(leafCount(current),Math.max(0,index)),changed=next!==readingIndex;const key=[next,...turns.map(t=>[t.direction,t.span??1].join(':'))].join('|');if(key!==correctionKey||!turns.length)trialLift=0;correctionKey=key;readingIndex=next;activeTurns=turns;if(changed&&last>0&&last<180){const angle=last;last=-1;setOpening(angle)}else refreshPages()}
@@ -181,13 +183,15 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   }
   setOpening(0);refreshPages()
   const updateAppearance=(next:BookConfig)=>{
-    const previous=current;current=next;pages.update(next)
-    if(previous.coverFlex!==next.coverFlex||previous.pageCoupling!==next.pageCoupling){const angle=last;last=-1;setOpening(angle)}
+    const previous=current;current=next;pages.update(next);readingIndex=Math.min(readingIndex,leafCount(next))
+    const physicalChanged=physicalBook(previous).thickness!==physicalBook(next).thickness
+    if(physicalChanged){pageDepth=physicalBook(next).core/100;coverZ=(pageDepth+t)/2;back.position.z=-coverZ;chainCache.clear();stackKey='';const angle=last;last=-1;setOpening(angle)}
+    if(!physicalChanged&&(previous.coverFlex!==next.coverFlex||previous.pageCoupling!==next.pageCoupling||leafCount(previous)!==leafCount(next))){const angle=last;last=-1;setOpening(angle)}
     const keys=['coverColor','inkColor','title','subtitle','author','finish'] as const
     const common=keys.some(k=>previous[k]!==next[k])
     for(const [face,mat] of [['cover',front],['back',rear],['spine',spineFace]] as const){
       const fields=([face+'Image',face+'Zoom',face+'X',face+'Y',face+'Text'] as (keyof BookConfig)[])
-      if(common||fields.some(k=>previous[k]!==next[k])){if(mat.map){mat.map.userData.disposed=true;mat.map.dispose()}mat.map=cover(next,face);mat.map.userData.invalidate=invalidate;mat.needsUpdate=true}
+      if(common||face==='spine'&&physicalChanged&&Math.max(64,Math.round(1024*physicalBook(previous).thickness/previous.height))!==Math.max(64,Math.round(1024*physicalBook(next).thickness/next.height))||fields.some(k=>previous[k]!==next[k])){if(mat.map){mat.map.userData.disposed=true;mat.map.dispose()}mat.map=cover(next,face);mat.map.userData.invalidate=invalidate;mat.needsUpdate=true}
     }
     if(previous.finish!==next.finish){const old=board.bumpMap;const nextBump=next.finish==='cloth'?bump():null;for(const m of [board,front,rear,spineFace]){m.bumpMap=nextBump;m.bumpScale=nextBump ? .006:0;m.clearcoat=next.finish==='gloss'?.85:0;m.needsUpdate=true}old?.dispose()}
     board.color.set(next.coverColor);for(const m of [board,front,rear,spineFace])m.roughness=next.roughness
@@ -335,7 +339,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0||!hit.face)return null;const point=mesh.worldToLocal(hit.point.clone()),fraction=pickedDepth(mesh.geometry,hit.face,point,right?1:-1);if(fraction===null)return null;const countPicked=groupCount(count,fraction);return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,workerContactSnapshot,resetSweptContacts,resolveTriangleContacts,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,workerContactSnapshot,resetSweptContacts,resolveTriangleContacts,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,leftNominal:leftDepthNow,rightNominal:rightDepthNow,moving:Math.max(0,pageDepth-leftDepthNow-rightDepthNow),leaves:leafCount(current),left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,textureMetrics:pages.textureMetrics,cancelPreload:pages.cancelPreload,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()

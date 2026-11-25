@@ -17,6 +17,7 @@ on:
       - 'src/editor/**'
       - 'src/core/workspace.ts'
       - 'src/core/schema.ts'
+      - 'src/core/physicalBook.ts'
       - 'src/style.css'
       - 'src/core/pages.ts'
       - 'src/core/pageGpu.ts'
@@ -94,7 +95,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/workspace.spec.ts
+      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

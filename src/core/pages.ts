@@ -95,20 +95,54 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   const chunk=new T.Mesh(chunkShape.g,[chunkEdge,chunkEdge,chunkHead,chunkHead,chunkFront,chunkBack]);chunk.name='Turning page block';chunk.castShadow=chunk.receiveShadow=true;chunk.visible=false;root.add(chunk)
   const blank=paperMat();blank.color.set(c.paperColor)
   const handoff=new T.Mesh(chunkShape.handoff,chunkFront);handoff.name='Chunk handoff leaf';handoff.visible=false;handoff.castShadow=handoff.receiveShadow=true;handoff.frustumCulled=false;chunk.add(handoff)
-  const keys=new Map<T.MeshPhongMaterial,string>()
+  const keys=new Map<T.MeshPhongMaterial,string>(),materials=new Set<T.MeshPhongMaterial>()
+  const cache=new Map<string,T.Texture>();let generation=0,hits=0,misses=0,evictions=0
+  const capacity=24
+  const disposeTexture=(texture:T.Texture)=>{texture.userData.disposed=true;texture.dispose()}
+  const trim=()=>{
+    const pinned=new Set([...materials].map(mat=>mat.map))
+    for(const [key,texture] of cache){
+      if(cache.size<=capacity)break
+      if(pinned.has(texture))continue
+      cache.delete(key);disposeTexture(texture);evictions++
+    }
+  }
+  function acquire(index:number,flip=false){
+    const key=generation+':'+index+':'+flip
+    const cached=cache.get(key)
+    if(cached){hits++;cache.delete(key);cache.set(key,cached);return cached}
+    misses++;const texture=pageTexture(config,index,flip,invalidate);cache.set(key,texture);return texture
+  }
+  let idle:number|null=null,idleNative=false,disposed=false,preloadKey=''
+  const cancelPreload=()=>{if(idle!==null){if(idleNative)window.cancelIdleCallback(idle);else window.clearTimeout(idle);idle=null}}
+  function preload(index:number,count:number){
+    const key=generation+':'+index+':'+count;if(key===preloadKey)return;preloadKey=key;cancelPreload()
+    const queue:[number,boolean][]=[]
+    for(const direction of [1,-1] as const){
+      if(direction===1?index>=count:index<=0)continue
+      const faces=turnFaces(index,direction);queue.push([faces.front,false],[faces.back,true])
+    }
+    const next=()=>{
+      idle=null;if(disposed||!queue.length)return
+      const [face,flip]=queue.shift()!;const texture=acquire(face,flip)
+      if(warm)warm(texture);trim();schedule()
+    }
+    const schedule=()=>{if(!queue.length)return;idleNative=typeof window.requestIdleCallback==='function';idle=idleNative?window.requestIdleCallback(next):window.setTimeout(next,32)}
+    schedule()
+  }
   function assign(mat:T.MeshPhongMaterial,index:number,flip=false){
-    const key=index+':'+flip
+    const key=generation+':'+index+':'+flip
     if(keys.get(mat)===key)return
-    if(mat.map){mat.map.userData.disposed=true;mat.map.dispose()}
-    mat.map=pageTexture(config,index,flip,invalidate);mat.needsUpdate=true;keys.set(mat,key)
+    const hadMap=!!mat.map;materials.add(mat);mat.map=acquire(index,flip);if(!hadMap)mat.needsUpdate=true;keys.set(mat,key);trim()
   }
   function update(next:BookConfig){
-    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor)keys.clear()
+    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor){cancelPreload();generation++;keys.clear()}
     if(next.paperColor!==config.paperColor){for(const [mat,vertical] of [[chunkEdge,true],[chunkHead,false]] as const){mat.map?.dispose();mat.map=paperEdgeTexture(next.paperColor,vertical);mat.needsUpdate=true}}
     config=next;blank.color.set(next.paperColor)
   }
   function prepareChunk(index:number,direction:1|-1,n:number){const lo=direction===1?index:index-n;assign(chunkFront,lo*2);assign(chunkBack,(lo+n)*2-1);return [chunkFront,chunkBack].map(m=>!!m.map&&!m.map.userData.pending&&(!warm||warm(m.map))).every(Boolean)}
   function pose(index:number,count:number,active:ActiveLeaf[]){
+    if(active.length){cancelPreload();preloadKey=''}else preload(index,count)
     const direction=active[0]?.direction??1,faces=pageFaces(index,count),next=pageFaces(index+direction*activeSpan(active),count)
     assign(left.material,direction===-1?next.left:faces.left)
     assign(right.material,direction===1?next.right:faces.right)
@@ -123,5 +157,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     })
     for(let i=block?0:active.length;i<slots.length;i++)slots[i].leaf.visible=false
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,dispose:()=>{blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,cancelPreload,textureMetrics:()=>({size:cache.size,capacity,hits,misses,evictions}),dispose:()=>{disposed=true;cancelPreload();for(const mat of materials)mat.map=null;for(const texture of cache.values())disposeTexture(texture);cache.clear();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }
