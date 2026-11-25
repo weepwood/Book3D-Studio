@@ -107,7 +107,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
   const enableSlip=new URLSearchParams(location.search).get('slip')!=='0'
   const elasticSections=new URLSearchParams(location.search).get('elastic')==='1'
   const independentLayers=new URLSearchParams(location.search).get('layers')==='1'
-  const contactEnvelope=new URLSearchParams(location.search).get('contactEnvelope')==='1'
+  const contactEnvelope=new URLSearchParams(location.search).get('contactEnvelope')!=='0'
   const curveQuality={samples:0,maxRelativeLengthError:0,maxRootError:0,maxCurvature:0,maxEnergyPerWidth:0}
   const recordCurve=(chain:Chain)=>{if(!measureCurve)return;const m=curveMetrics(chain,material.rigidity);curveQuality.samples++;curveQuality.maxRelativeLengthError=Math.max(curveQuality.maxRelativeLengthError,m.relativeLengthError);curveQuality.maxRootError=Math.max(curveQuality.maxRootError,m.rootError);curveQuality.maxCurvature=Math.max(curveQuality.maxCurvature,m.maxCurvature);curveQuality.maxEnergyPerWidth=Math.max(curveQuality.maxEnergyPerWidth,m.bendingEnergy)}
   let readingIndex=Math.min(c.pageIndex,leafCount(c)),activeTurns:ActiveLeaf[]=[],dropMs=settledDropMs,stackKey='',refreshCount=0,stackPoseCount=0
@@ -350,6 +350,25 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     const left=direction===1,mesh=left?pages.left:pages.right,chain=(left?leftLayers:rightLayers).at(-1)!
     return handoffUV.map(({u,v})=>{const p=sampleChain(chain,u);return mesh.localToWorld(new T.Vector3(left?pageWidth/2-p.x:p.x-pageWidth/2,v*pageHeight,p.z))})
   }
+  // Compare the visible outer face of a landed thick block against the
+  // destination surface at identical material coordinates.
+  const chunkUV=[0,.25,.5,.75,1].flatMap(u=>[0,.5,1].map(v=>({u,v})))
+  function activeChunkHandoffPoints(direction:1|-1){
+    const mesh=pages.chunk,g=mesh.geometry,face=direction===1?5:4,group=g.groups.find(x=>x.materialIndex===face)
+    if(!mesh.visible||!group||!g.index)return []
+    const uv=g.getAttribute('uv'),pos=g.getAttribute('position'),indices=new Set<number>()
+    for(let i=group.start;i<group.start+group.count;i++)indices.add(g.index.getX(i))
+    return chunkUV.map(({u,v})=>{
+      const target=face===5?1-u:u
+      let best=-1,error=Infinity
+      for(const i of indices){const e=Math.abs(uv.getX(i)-target)+Math.abs(uv.getY(i)-v);if(e<error){best=i;error=e}}
+      return mesh.localToWorld(new T.Vector3().fromBufferAttribute(pos,best))
+    })
+  }
+  function stationaryChunkHandoffPoints(direction:1|-1){
+    const left=direction===1,mesh=left?pages.left:pages.right,chain=(left?leftLayers:rightLayers).at(-1)!
+    return chunkUV.map(({u,v})=>{const p=sampleChain(chain,u);return mesh.localToWorld(new T.Vector3(left?pageWidth/2-p.x:p.x-pageWidth/2,(v-.5)*pageHeight,p.z))})
+  }
   function readingPickPoint(){const chain=rightLayers[rightLayers.length-1];if(!chain)return null;const s=sampleChain(chain,.85);return pages.right.localToWorld(new T.Vector3(s.x-pageWidth/2,0,s.z))}
   function groupPickCandidates(direction:1|-1){const right=direction===1,mesh=right?lower:upper,count=right?rightCount:leftCount;if(count<2||!mesh.visible)return [];return edgeTriangleCenters(mesh.geometry).map(v=>mesh.localToWorld(v))}
 
@@ -367,7 +386,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0||!hit.face)return null;const point=mesh.worldToLocal(hit.point.clone()),fraction=pickedDepth(mesh.geometry,hit.face,point,right?1:-1);if(fraction===null)return null;const countPicked=groupCount(count,fraction);return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,workerContactSnapshot,resetSweptContacts,resolveTriangleContacts,measureActiveSurfaces,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,leftNominal:leftDepthNow,rightNominal:rightDepthNow,moving:Math.max(0,pageDepth-leftDepthNow-rightDepthNow),leaves:leafCount(current),left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),curveQuality:()=>({...curveQuality}),geometryMetrics:()=>({refreshCount,stackPoseCount,chainCacheSize:chainCache.size,dropMs}),prepareChunk:pages.prepareChunk,prepareShaders:pages.prepareShaders,textureMetrics:pages.textureMetrics,cancelPreload:pages.cancelPreload,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,activeHandoffPoints,stationaryHandoffPoints,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,workerContactSnapshot,resetSweptContacts,resolveTriangleContacts,measureActiveSurfaces,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,leftNominal:leftDepthNow,rightNominal:rightDepthNow,moving:Math.max(0,pageDepth-leftDepthNow-rightDepthNow),leaves:leafCount(current),left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),curveQuality:()=>({...curveQuality}),geometryMetrics:()=>({refreshCount,stackPoseCount,chainCacheSize:chainCache.size,dropMs}),prepareChunk:pages.prepareChunk,prepareShaders:pages.prepareShaders,textureMetrics:pages.textureMetrics,cancelPreload:pages.cancelPreload,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,activeHandoffPoints,stationaryHandoffPoints,activeChunkHandoffPoints,stationaryChunkHandoffPoints,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()

@@ -4,7 +4,7 @@ test('材料预设、2000页双向翻动和缓存预算持续稳定',async({page
  test.setTimeout(120000)
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
  const hardware=process.env.BOOK3D_HARDWARE_GPU==='1'
- await page.goto('/?perf=1&curve=1&surface=1'+(hardware?'&prewarm=1':'')+(process.env.BOOK3D_ELASTIC==='1'?'&elastic=1':'')+(process.env.BOOK3D_LAYERS==='1'?'&layers=1':'')+(process.env.BOOK3D_ENVELOPE==='1'?'&contactEnvelope=1':''));const host=page.locator('.canvas-host')
+ await page.goto('/?perf=1&curve=1&surface=1&handoff=1'+(hardware?'&prewarm=1':'')+(process.env.BOOK3D_ELASTIC==='1'?'&elastic=1':'')+(process.env.BOOK3D_LAYERS==='1'?'&layers=1':'')+(process.env.BOOK3D_ENVELOPE==='1'?'&contactEnvelope=1':''));const host=page.locator('.canvas-host')
  await expect(host.locator('canvas')).toBeVisible({timeout:15000})
  if(hardware)await expect(host).toHaveAttribute('data-shader-warm','submitted',{timeout:15000})
  const shaderMs=hardware?Number(await host.getAttribute('data-shader-warm-ms')):null
@@ -28,7 +28,12 @@ test('材料预设、2000页双向翻动和缓存预算持续稳定',async({page
  }
  await page.screenshot({path:info.outputPath('material-2000-pages.png')})
  const surface=JSON.parse((await host.getAttribute('data-surface-quality'))!);expect(surface.leaf.samples).toBeGreaterThan(0);expect(surface.chunk.samples).toBeGreaterThan(0);expect(surface.leaf.invalid+surface.chunk.invalid+surface.handoff.invalid).toBe(0)
+ const chunkHandoff=JSON.parse((await host.getAttribute('data-chunk-handoff-quality'))!);expect(chunkHandoff.commits).toBeGreaterThan(0);expect(Number.isFinite(chunkHandoff.maxMm)).toBe(true);expect(chunkHandoff.maxMm).toBeLessThan(.01);expect(chunkHandoff.invalid).toBe(0)
  const curve=JSON.parse((await host.getAttribute('data-curve-quality'))!);expect(curve.samples).toBeGreaterThan(0);expect(Object.values(curve).every(Number.isFinite)).toBe(true);expect(curve.maxRootError).toBeLessThan(1e-7);expect(curve.maxRelativeLengthError).toBeLessThan(.005)
- await writeFile(info.outputPath('material-engine.json'),JSON.stringify({shaderMs,samples,curve,surface,perf:JSON.parse((await host.getAttribute('data-perf'))!),renderer:await host.getAttribute('data-perf-renderer')},null,2))
- expect(errors).toEqual([])
+ await writeFile(info.outputPath('material-engine.json'),JSON.stringify({shaderMs,samples,curve,surface,chunkHandoff,perf:JSON.parse((await host.getAttribute('data-perf'))!),renderer:await host.getAttribute('data-perf-renderer')},null,2))
+ // A new project must not inherit the previous project's handoff samples.
+ await page.locator('.left').getByRole('button',{name:/项目/}).click()
+ await page.getByRole('button',{name:'复制',exact:true}).click()
+ await expect(host).not.toHaveAttribute('data-chunk-handoff-quality',/./)
+ await expect(errors).toEqual([])
 })

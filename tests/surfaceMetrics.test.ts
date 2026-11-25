@@ -89,3 +89,25 @@ it('接触包络在精确交接处连续衰减且快速达到完整强度',()=>{
  expect(contactEnvelopeStrength(chunkEndpointWeight(.025))).toBe(1)
  for(let i=0;i<100;i++)expect(contactEnvelopeStrength(i/100)).toBeGreaterThanOrEqual(contactEnvelopeStrength((i+1)/100))
 })
+
+import {adaptiveContactClearance,createContactClearanceScratch} from '../src/core/stackGeometry'
+it('普通清距梯度沿用原算法，尖峰包络保持最小清距与装订列',()=>{
+ const mild=new Float64Array([0,.001,.002,.004,.001,0]),legacy=mild.slice()
+ spreadClearance(legacy,6,1,.02,.1,.5);adaptiveContactClearance(mild,6,1,.02,.1,.5)
+ expect(mild).toEqual(legacy)
+ const raw=new Float64Array([0,0,0,.14,.14,0,0,0]),spike=raw.slice()
+ adaptiveContactClearance(spike,8,1,.02,.1,.8)
+ expect(spike[0]).toBe(raw[0]);for(let i=0;i<spike.length;i++)expect(spike[i]).toBeGreaterThanOrEqual(raw[i])
+ const end=raw.slice();adaptiveContactClearance(end,8,1,.02,.1,1);expect(end).toEqual(raw)
+})
+
+it('重复使用接触清距工作区不改变结果或污染后续姿态',()=>{
+ const scratch=createContactClearanceScratch(12)
+ for(const weight of [0,.4,.55,.8,1,.6,.2,.99])for(const amplitude of [.001,.14,.03]){
+  const raw=Float64Array.from({length:12},(_,i)=>i%4===2?amplitude:0),a=raw.slice(),b=raw.slice()
+  adaptiveContactClearance(a,6,2,.02,.05,weight)
+  adaptiveContactClearance(b,6,2,.02,.05,weight,scratch)
+  expect(b).toEqual(a)
+  for(let i=0;i<b.length;i++)expect(b[i]).toBeGreaterThanOrEqual(raw[i])
+ }
+})
