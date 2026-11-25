@@ -2,6 +2,7 @@ import {PRESS_REFERENCE as R} from './pressReference'
 import type {ChunkMotion} from './chunkMotion'
 export const clamp=(x:number,min=0,max=1)=>Math.max(min,Math.min(max,x))
 export type TurnState={direction:1|-1;progress:number;renderProgress:number;velocity:number;acceleration?:number;grip:number;preview:boolean;dragTarget:number;curlAmount:number;grabU:number;span?:number;chunkElapsed?:number;chunkGesture?:boolean;chunkMotion?:ChunkMotion;dragOrigin?:number}
+export function turnAtEndpoint(t:Pick<TurnState,"progress"|"renderProgress"|"curlAmount">,goal:0|1){return t.progress===goal&&t.renderProgress===goal&&t.curlAmount===0}
 export function newTurn(direction:1|-1,grip=0,preview=false):TurnState{return {direction,progress:0,renderProgress:0,velocity:0,grip:clamp(grip,-1,1),preview,dragTarget:0,curlAmount:0,grabU:1}}
 // Independent bounded-velocity adapter. Single turns, queued turns and
 // gesture releases share the same integrator; only speed budgets differ.
@@ -29,6 +30,8 @@ export class MotionClock {
  private remainder=0
  private debt=0
  advance(dt:number){
+  // Recovery debt belongs only to the interrupted automatic reading burst.
+  this.debt=0
   const quantum=1/120
   this.remainder+=clamp(dt,0,.05)
   const steps=Math.min(6,Math.floor((this.remainder+1e-10)/quantum))

@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest'
 import {TurnInput,releaseGesture,gestureIntent,sampleDragVelocity,releaseDragVelocity} from '../src/core/turnInput'
-import {MotionClock} from '../src/core/pagePhysics'
+import {MotionClock,turnAtEndpoint} from '../src/core/pagePhysics'
 it('paced input adapts to cadence and backlog, then resets on reversal or pause',()=>{
  const i=new TurnInput();i.push(1,0);const one=i.timing(1)
  for(let j=1;j<8;j++)i.push(1,j*90)
@@ -37,4 +37,16 @@ it('reversal and late release coordinates cannot inherit stale forward momentum'
  expect(releaseDragVelocity(3,.6,.6,121)).toBe(0)
  expect(releaseDragVelocity(2,.6,.6,10)).toBe(2)
  expect(releaseDragVelocity(3,.6,.6,Number.NaN)).toBe(0)
+})
+
+it('automatic recovery debt is not inherited after manual or idle clock steps',()=>{
+ const clock=new MotionClock();expect(clock.advanceInteractive(.5)).toBeCloseTo(.075)
+ expect(clock.advance(1/60)).toBeCloseTo(1/60)
+ expect(clock.advanceInteractive(1/60)).toBeCloseTo(1/60)
+ expect(releaseDragVelocity(3,.6,.7,-1)).toBe(0)
+})
+it('cancel requires a rendered exact endpoint including curl',()=>{
+ expect(turnAtEndpoint({progress:0,renderProgress:.001,curlAmount:0},0)).toBe(false)
+ expect(turnAtEndpoint({progress:0,renderProgress:0,curlAmount:.001},0)).toBe(false)
+ expect(turnAtEndpoint({progress:0,renderProgress:0,curlAmount:0},0)).toBe(true)
 })

@@ -43,7 +43,7 @@ export function sampleDragVelocity(previous:number,from:number,to:number,dt:numb
  return clamp(.65*previous+.35*v,-4,4)
 }
 export function releaseDragVelocity(previous:number,from:number,to:number,elapsedMs:number){
- if(!Number.isFinite(elapsedMs)||elapsedMs>120)return 0
+ if(!Number.isFinite(elapsedMs)||elapsedMs<0||elapsedMs>120)return 0
  if(Math.abs(to-from)>.003)return sampleDragVelocity(previous,from,to,Math.max(8,elapsedMs)/1000)
  return clamp(previous,-4,4)
 }
