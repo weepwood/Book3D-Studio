@@ -2,10 +2,10 @@ import {chromium} from '@playwright/test'
 import {mkdir,writeFile,readFile} from 'node:fs/promises'
 const dir='matched-visual',fixture=await readFile(new URL('./fixtures/visual-book.json',import.meta.url))
 await mkdir(dir,{recursive:true})
-const browser=await chromium.launch({executablePath:process.env.BOOK3D_CHROMIUM_EXECUTABLE||undefined,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']})
-const report=[]
+const browser=await chromium.launch({executablePath:process.env.BOOK3D_CHROMIUM_EXECUTABLE||undefined,args:process.env.BOOK3D_HARDWARE_GPU==='1'?[]:['--use-angle=swiftshader','--enable-unsafe-swiftshader']})
+const report=[],baseline=process.env.BASELINE_LABEL||'v0.8.0'
 try{
- for(const [name,url] of [['v0.6.0',process.env.BASELINE_URL],['candidate',process.env.LOCAL_URL]]){
+ for(const [name,url] of [[baseline,process.env.BASELINE_URL],['candidate',process.env.LOCAL_URL]]){
    if(!url)throw Error('Both baseline and candidate URLs are required')
    const page=await browser.newPage({viewport:{width:1280,height:900},deviceScaleFactor:1})
    const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/WebGLProgram|shader error|VALIDATE_STATUS/i.test(m.text()))errors.push(m.text())})
@@ -49,4 +49,4 @@ try{
    if(errors.length)throw Error(name+': '+errors.join('; '))
    await page.close()
  }
-}finally{await browser.close();await writeFile(dir+'/report.json',JSON.stringify({fixture:JSON.parse(fixture.toString()),baseline:'v0.6.0',report,limitations:'Same local dimensions, original demo artwork and UI viewport; candidate fit is intentionally changed. Turn-frame canvas captures are synchronous with the recorded logical progress; baseline and candidate can cross the threshold on different frames. Full workspace turn screenshots remain asynchronous. External Stripe Press assets/camera are not equivalent; no pixel-level source parity claim.'},null,2))}
+}finally{await browser.close();await writeFile(dir+'/report.json',JSON.stringify({fixture:JSON.parse(fixture.toString()),baseline,report,limitations:'Same local dimensions, original demo artwork and UI viewport; candidate fit is intentionally changed. Turn-frame canvas captures are synchronous with the recorded logical progress; baseline and candidate can cross the threshold on different frames. Full workspace turn screenshots remain asynchronous. External Stripe Press assets/camera are not equivalent; no pixel-level source parity claim.'},null,2))}

@@ -12,9 +12,9 @@ export function paperShadowChunk(source:string){
 export function paperGrainAmplitude(lum:number,strength:number=R.paper.shadowGrain){const t=T.MathUtils.smoothstep(lum,.3,1.2);return Math.min((.3+.7*(1-t))*strength*.75,Math.max(0,lum)*.45)}
 export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
  const p=R.paper,side=flip?1:0
- mat.customProgramCacheKey=()=> 'book3d-paper-gutter-v4'
+ mat.customProgramCacheKey=()=> 'book3d-paper-gutter-v5'
  mat.onBeforeCompile=shader=>{
-   Object.assign(shader.uniforms,{paperFlip:{value:side},paperBounce:{value:new T.Color(...p.bounceColor)},paperGrain:{value:p.shadowGrain},paperEdge:{value:new T.Vector3(p.edgeBand,p.edgeBright,p.edgeDark)}})
+   Object.assign(shader.uniforms,{paperFlip:{value:side},paperBounce:{value:new T.Color(...p.bounceColor)},paperGrain:{value:p.shadowGrain*.65},paperEdge:{value:new T.Vector3(p.edgeBand,p.edgeBright,p.edgeDark)}})
    shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 paperUV;').replace('#include <uv_vertex>','#include <uv_vertex>\npaperUV=uv;')
    shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 paperUV; uniform float paperFlip; uniform vec3 paperBounce; uniform float paperGrain; uniform vec3 paperEdge;')
      .replace('#include <lights_fragment_begin>',paperShadowChunk(T.ShaderChunk.lights_fragment_begin))
@@ -22,10 +22,10 @@ export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
        float spineU=clamp(mix(paperUV.x,1.0-paperUV.x,paperFlip),0.0,1.0);
        float tilt=pow(clamp(1.0-abs(dot(normalize(normal),normalize(vViewPosition))),0.0,1.0),1.5);
        float bounce=pow(1.0-smoothstep(0.0,.29,spineU),1.87)*(.8+.6*tilt);
-       outgoingLight+=paperBounce*bounce*.39*.6;
+       outgoingLight+=paperBounce*bounce*.39*.48;
        float band=1.0-smoothstep(0.0,.14,spineU);
        float core=1.0-smoothstep(0.0,.045,spineU);
-       float crease=min(.6,.18*band*band*(.6+.4*tilt)+.34*core*core*core);
+       float crease=min(.6,.23*band*band*(.6+.4*tilt)+.34*core*core*core);
        vec3 hue=vec3(0.0);
        #if NUM_DIR_LIGHTS > 0
        for(int j=0;j<NUM_DIR_LIGHTS;j++){hue+=directionalLights[j].color;}
@@ -55,7 +55,7 @@ export function applyPaperShading(mat:T.MeshPhongMaterial,flip=false){
        float amplitude=min((.3+.7*(1.0-smoothstep(.3,1.2,lum)))*paperGrain*.75,max(0.0,lum)*.45);
        // Paper fibre is mostly luminance variation, not RGB speckle.
        float fibre=dot(noise,vec3(.2126,.7152,.0722));
-       outgoingLight=max(vec3(0.0),outgoingLight+mix(vec3(fibre),noise,.18)*amplitude);
+       outgoingLight=max(vec3(0.0),outgoingLight+mix(vec3(fibre),noise,.06)*amplitude);
        #include <opaque_fragment>
      `)
  }
