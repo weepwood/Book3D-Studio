@@ -11,7 +11,8 @@ import {createBindingGeometry} from './bindingGeometry'
 import {paperEdgeTexture} from './paperEdge'
 import {safeHingeZ} from './clearance'
 import {sectionCrossings} from './sheetCollision'
-import {snapshotMesh,scanMeshContacts} from './meshContacts'
+import {ContactCache,scanMeshContacts} from './meshContacts'
+import {prepareSweptMesh,scanSweptTrees,type MotionSnapshot} from './sweptContact'
 import {contactCorrection,improvesContacts} from './contactCorrection'
 const texture = (canvas: HTMLCanvasElement) => {
   const t = new T.CanvasTexture(canvas)
@@ -219,16 +220,37 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       }else{const slot=pages.slots[i];if(!slot?.leaf.visible)continue;const rows=dense?9:3,cols=dense?32:16;let previous:T.Vector3[]=[];for(let r=0;r<rows;r++){const v=-.4+.8*r/(rows-1),row:T.Vector3[]=[];for(let j=1;j<=cols;j++){const b=slot.leaf.localToWorld(slot.gpu.pickPoint(j/cols,v));if(row.length)scan(row[row.length-1],b);if(dense&&previous.length){scan(previous[j-1],b);if(j>1)scan(previous[j-2],b)}row.push(b)}previous=row}}
     }return {segments,hits,byMesh,examples}
   }
-  function triangleCollisionSample(){
+  const contactCache=new ContactCache()
+  function captureContactMeshes(){
     root.updateMatrixWorld(true);rig.skeleton.update();rearRig.skeleton.update()
-    const inverse=root.matrixWorld.clone().invert(),meshes:{name:string;geometry:T.BufferGeometry;active:boolean}[]=[]
-    const add=(mesh:T.Mesh,name:string,active:boolean)=>{if(mesh.visible)meshes.push({name,geometry:snapshotMesh(mesh,inverse),active})}
+    const inverse=root.matrixWorld.clone().invert(),meshes:Parameters<typeof scanMeshContacts>[0]=[]
+    const add=(mesh:T.Mesh,name:string,active:boolean)=>{if(mesh.visible)meshes.push({name,...contactCache.snapshot(mesh,inverse),active})}
     for(const mesh of [back,rig.mesh,lower,upper,spine,innerBinding])add(mesh,mesh.name,false)
     for(const [i,turn] of activeTurns.entries()){
       if((turn.span??1)>1){if(pages.chunk.visible){add(pages.chunk,'chunk',true);for(const child of pages.chunk.children)if(child instanceof T.Mesh)add(child,'handoff',true)}}
       else {const slot=pages.slots[i];if(slot?.leaf.visible){const proxy=slot.gpu.pickMesh();proxy.matrixWorld.copy(slot.leaf.matrixWorld);add(proxy,`leaf-${i}`,true)}}
     }
-    try{return scanMeshContacts(meshes,-w/2,gutterInset+bindingLip)}finally{for(const mesh of meshes)mesh.geometry.dispose()}
+    return meshes
+  }
+  function triangleCollisionSample(){return {...scanMeshContacts(captureContactMeshes(),-w/2,gutterInset+bindingLip),cache:{builds:contactCache.builds,refits:contactCache.refits}}}
+  let priorMotion:Map<string,MotionSnapshot>|null=null,priorMotionKey=''
+  function resetSweptContacts(){priorMotion=null;priorMotionKey=''}
+  function sweptCollisionSample(){
+    const meshes=captureContactMeshes(),key=[readingIndex,...activeTurns.map(t=>[t.direction,t.span??1].join(':'))].join('|'),current=new Map<string,MotionSnapshot>()
+    for(const m of meshes){const p=m.geometry.getAttribute('position');current.set(m.name,{positions:Float32Array.from(p.array),indices:m.geometry.index?Uint32Array.from(m.geometry.index.array):Uint32Array.from({length:p.count},(_,i)=>i)})}
+    const previous=priorMotion;priorMotion=current;const stable=key===priorMotionKey;priorMotionKey=key
+    const pairs:{a:string;b:string;tested:number;hits:number;uncertain:number;complete:boolean;topologyChanged:boolean}[]=[]
+    if(!previous||!stable)return {reset:true,pairs}
+    // Each temporal BVH is built at most once for this sample interval.
+    // Raw swept hits include legitimate support contacts, not just defects.
+    const trees=new Map<string,ReturnType<typeof prepareSweptMesh>>()
+    const tree=(name:string)=>{if(!trees.has(name)){const old=previous.get(name);trees.set(name,old?prepareSweptMesh(old,current.get(name)!):null)}return trees.get(name)!}
+    for(let i=0;i<meshes.length;i++)for(let j=i+1;j<meshes.length;j++){
+      const a=meshes[i],b=meshes[j],support=/cover/i.test(a.name)&&/page block/i.test(b.name)||/cover/i.test(b.name)&&/page block/i.test(a.name)
+      if(!a.active&&!b.active&&!support)continue
+      pairs.push({a:a.name,b:b.name,...scanSweptTrees(tree(a.name),tree(b.name),64)})
+    }
+    return {reset:false,pairs}
   }
   // Opt-in bounded geometry trials: compare exactly the same pose before/after.
   // Do not persist a worse candidate or alter the sewn anchor.
@@ -281,7 +303,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0||!hit.face)return null;const point=mesh.worldToLocal(hit.point.clone()),fraction=pickedDepth(mesh.geometry,hit.face,point,right?1:-1);if(fraction===null)return null;const countPicked=groupCount(count,fraction);return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,resolveTriangleContacts,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,resetSweptContacts,resolveTriangleContacts,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()

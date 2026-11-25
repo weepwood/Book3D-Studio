@@ -7,6 +7,7 @@ on:
       - 'src/core/triangleContact.ts'
       - 'src/core/meshContacts.ts'
       - 'src/core/contactCorrection.ts'
+      - 'src/core/sweptContact.ts'
       - 'src/core/clearance.ts'
       - 'src/core/renderProbe.ts'
       - 'src/editor/**'
@@ -71,7 +72,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts
+      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts browser-tests/swept-contact.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
