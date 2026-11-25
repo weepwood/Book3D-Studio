@@ -13,6 +13,7 @@ import {safeHingeZ} from './clearance'
 import {sectionCrossings} from './sheetCollision'
 import {ContactCache,scanMeshContacts} from './meshContacts'
 import {prepareSweptMesh,scanSweptTrees,type MotionSnapshot} from './sweptContact'
+import {containmentProbe,selfContactProbe} from './solidContacts'
 import {contactCorrection,improvesContacts} from './contactCorrection'
 const texture = (canvas: HTMLCanvasElement) => {
   const t = new T.CanvasTexture(canvas)
@@ -233,11 +234,20 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return meshes
   }
   function triangleCollisionSample(){return {...scanMeshContacts(captureContactMeshes(),-w/2,gutterInset+bindingLip),cache:{builds:contactCache.builds,refits:contactCache.refits}}}
+  function solidCollisionSample(){
+    const meshes=captureContactMeshes(),self=meshes.filter(m=>m.active&&m.tree).map(m=>({name:m.name,...selfContactProbe(m.geometry,m.tree!,2048)}))
+    const containment=[]
+    for(const a of meshes.filter(m=>/cover|page block|chunk/i.test(m.name)&&m.tree))for(const b of meshes.filter(m=>m.active||/cover|page block/i.test(m.name))){
+      if(a===b||!a.geometry.boundingBox!.intersectsBox(b.geometry.boundingBox!))continue
+      containment.push({outer:a.name,inner:b.name,...containmentProbe(a.geometry,a.tree!,b.geometry,64)})
+    }
+    return {self,containment}
+  }
   let priorMotion:Map<string,MotionSnapshot>|null=null,priorMotionKey=''
   function resetSweptContacts(){priorMotion=null;priorMotionKey=''}
   function sweptCollisionSample(){
     const meshes=captureContactMeshes(),key=[readingIndex,...activeTurns.map(t=>[t.direction,t.span??1].join(':'))].join('|'),current=new Map<string,MotionSnapshot>()
-    for(const m of meshes){const p=m.geometry.getAttribute('position');current.set(m.name,{positions:Float32Array.from(p.array),indices:m.geometry.index?Uint32Array.from(m.geometry.index.array):Uint32Array.from({length:p.count},(_,i)=>i)})}
+    for(const m of meshes){const p=m.geometry.getAttribute('position');current.set(m.name,{positions:Float32Array.from(p.array),indices:m.geometry.index?Uint32Array.from(m.geometry.index.array):Uint32Array.from({length:p.count},(_,i)=>i),materials:Uint8Array.from({length:Math.floor((m.geometry.index?.count??p.count)/3)},(_,i)=>m.geometry.groups.find(g=>i*3>=g.start&&i*3<g.start+g.count)?.materialIndex??255)})}
     const previous=priorMotion;priorMotion=current;const stable=key===priorMotionKey;priorMotionKey=key
     const pairs:{a:string;b:string;tested:number;hits:number;uncertain:number;complete:boolean;topologyChanged:boolean}[]=[]
     if(!previous||!stable)return {reset:true,pairs}
@@ -248,7 +258,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     for(let i=0;i<meshes.length;i++)for(let j=i+1;j<meshes.length;j++){
       const a=meshes[i],b=meshes[j],support=/cover/i.test(a.name)&&/page block/i.test(b.name)||/cover/i.test(b.name)&&/page block/i.test(a.name)
       if(!a.active&&!b.active&&!support)continue
-      pairs.push({a:a.name,b:b.name,...scanSweptTrees(tree(a.name),tree(b.name),64)})
+      pairs.push({a:a.name,b:b.name,...scanSweptTrees(tree(a.name),tree(b.name),64,[a.name,b.name])})
     }
     return {reset:false,pairs}
   }
@@ -303,7 +313,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     return best
   }
   function pickGroup(ray:T.Raycaster){const hit=ray.intersectObjects([lower,upper,pages.left,pages.right,back,rig.mesh,spine,innerBinding].filter(m=>m.visible),false)[0];if(!hit||hit.object!==lower&&hit.object!==upper||![0,2,3].includes(hit.face?.materialIndex??-1))return null;const right=hit.object===lower,mesh=right?lower:upper,count=right?rightCount:leftCount,depth=right?rightDepthNow:leftDepthNow;if(count<2||depth<=0||!hit.face)return null;const point=mesh.worldToLocal(hit.point.clone()),fraction=pickedDepth(mesh.geometry,hit.face,point,right?1:-1);if(fraction===null)return null;const countPicked=groupCount(count,fraction);return countPicked>=2?{direction:right?1 as const:-1 as const,grip:point.y/pageHeight*2,edge:1,progress:0,group:countPicked}:null}
-  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,resetSweptContacts,resolveTriangleContacts,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
+  return {root,hinge,collisionSample,meshCollisionSample,triangleCollisionSample,sweptCollisionSample,solidCollisionSample,resetSweptContacts,resolveTriangleContacts,activeFramePoints,motionFramePoints,readingFrameMeshes:[back,rig.mesh,lower,upper,pages.left,pages.right] as const,stackMetrics:()=>({configuredDepth:pageDepth,left:stackSection(leftLayers,leftDepthNow,leftCompression,1).thickness,right:stackSection(rightLayers,rightDepthNow,rightCompression,1).thickness,leftRoot:bindingHeight(leftDepthNow,leftCompression),rightRoot:bindingHeight(rightDepthNow,rightCompression)}),prepareChunk:pages.prepareChunk,handoffVisible:()=>pages.chunk.visible&&pages.chunk.children.some(child=>child.name==='Chunk handoff leaf'&&child.visible),pickActive,pickGroup,activePickPoint,groupPickCandidates,readingPickPoint,setDrop,readingSurfaces:[pages.left,pages.right] as const,setOpening,setReading,updateAppearance,dispose:()=>{contactCache.dispose();pages.dispose();rig.skeleton.dispose();rearRig.skeleton.dispose();disposeTree(root)}}
 }
 export function disposeTree(root:T.Object3D){
   const materials=new Set<T.Material>(),geometries=new Set<T.BufferGeometry>(),maps=new Set<T.Texture>()
