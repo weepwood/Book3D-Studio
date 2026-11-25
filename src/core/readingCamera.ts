@@ -26,12 +26,14 @@ export function rubber(value:number,min:number,max:number,scale:number,strength:
  const edge=clamp(value,min,max),excess=value-edge;return edge+excess*strength/(1+Math.abs(excess)/Math.max(1,scale))
 }
 export function springReading(value:ReadingView,velocity:ReadingView,target:ReadingView,dt:number){
- let remain=clamp(dt,0,.1)
- const k=R.readSpringStiffness,c=2*R.readSpringDamping*Math.sqrt(k)
+ // Exact underdamped solution for the fixed reference coefficients. Camera
+ // motion can consume elapsed presentation time without physics substeps.
+ const time=clamp(dt,0,.5),omega=Math.sqrt(R.readSpringStiffness),decay=R.readSpringDamping*omega,wd=omega*Math.sqrt(1-R.readSpringDamping**2)
+ const e=Math.exp(-decay*time),cos=Math.cos(wd*time),sin=Math.sin(wd*time)
  let done=true
  for(const key of ['zoom','x','y'] as const){
-   let v=value[key],speed=velocity[key],time=remain
-   while(time>1e-8){const step=Math.min(time,1/120);time-=step;speed+=(-k*(v-target[key])-c*speed)*step;v+=speed*step}
+   const displacement=value[key]-target[key],initial=velocity[key],b=(initial+decay*displacement)/wd
+   let v=target[key]+e*(displacement*cos+b*sin),speed=e*(initial*cos-(decay*b+wd*displacement)*sin)
    const eps=key==='zoom'?.0001:.05
    if(Math.abs(v-target[key])<=eps&&Math.abs(speed)<=eps*10){v=target[key];speed=0}else done=false
    value[key]=v;velocity[key]=speed

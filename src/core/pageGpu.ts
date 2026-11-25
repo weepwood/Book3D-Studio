@@ -49,7 +49,7 @@ vec3 ppShape(vec3 p,out vec3 n){
 }
 `
 export function createGpuPage(width:number,height:number){
-  const data=packChain(makeChain(width,0,0))
+  const data=packChain(makeChain(width,0,0)),scratch=new Float32Array(data.length)
   const texture=new T.DataTexture(data,R.chainNodes,2,T.RGBAFormat,T.FloatType)
   texture.minFilter=texture.magFilter=T.NearestFilter;texture.generateMipmaps=false;texture.needsUpdate=true
   const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1},ppFloor:{value:-1e6}}
@@ -68,7 +68,7 @@ export function createGpuPage(width:number,height:number){
   let pickProxy:T.Mesh<T.PlaneGeometry,T.MeshBasicMaterial>|null=null,pickDirty=true
   let current=makeChain(width,0,0),pose={progress:0,amount:0,grip:0,grabU:1,floor:-1e6}
   function update(progress:number,flex:number,amount:number,grip:number,grabU:number,chain?:Chain,floor=-1e6){
-    pickDirty=true;current=chain??makeChain(width,progress,flex);pose={progress,amount,grip,grabU,floor};uniforms.ppFloor.value=floor;packChain(current,data);texture.needsUpdate=true
+    pickDirty=true;current=chain??makeChain(width,progress,flex);pose={progress,amount,grip,grabU,floor};uniforms.ppFloor.value=floor;packChain(current,scratch);if(!scratch.every((v,i)=>v===data[i])){data.set(scratch);texture.needsUpdate=true}
     uniforms.ppAmount.value=safeRollAmount(amount,progress);uniforms.ppTilt.value=grip*R.curl.foldTiltDeg*Math.PI/180
     uniforms.ppSpan.value=R.curl.span/R.sourcePageWidth*width*(1+(1-Math.max(0,Math.min(1,grabU)))*1.2)
     uniforms.ppLift.value=progress>.5?-1:1

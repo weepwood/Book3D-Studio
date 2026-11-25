@@ -131,6 +131,9 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     const schedule=()=>{if(!queue.length)return;idleNative=typeof window.requestIdleCallback==='function';idle=idleNative?window.requestIdleCallback(next):window.setTimeout(next,32)}
     schedule()
   }
+  // Allocate just one representative hidden slot; compile traverses hidden
+  // objects, so no visible pose or reading state needs to be changed.
+  function prepareShaders(){const s=slot(0);for(const mat of [s.front,s.back])if(!mat.map){materials.add(mat);mat.map=placeholder;mat.needsUpdate=true}}
   function assign(mat:T.MeshPhongMaterial,index:number,flip=false){
     const key=generation+':'+index+':'+flip
     if(keys.get(mat)===key)return
@@ -160,5 +163,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(let i=block?0:active.length;i<slots.length;i++){const s=slots[i];s.leaf.visible=false;unpin(s.front);unpin(s.back)}
     trim()
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,cancelPreload,textureMetrics:()=>({size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,cancelPreload,textureMetrics:()=>({size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }

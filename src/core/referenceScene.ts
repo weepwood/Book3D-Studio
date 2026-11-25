@@ -17,7 +17,7 @@ export function groupCount(available:number,depthFromTop:number){return Math.max
 // Original chunk release: exponential attraction with a minimum .9 progress/s.
 export function chunkRelease(progress:number,goal:number,dt:number){const delta=goal-progress,step=Math.max(Math.abs(delta)*(1-Math.exp(-7*dt)),.9*dt);return Math.abs(delta)<=step?goal:progress+Math.sign(delta)*step}
 export function chunkDuration(count:number){return Math.min(1100,Math.max(700,700+45*Math.log2(Math.max(1,count))))}
-export function chunkAutoProgress(elapsed:number,count:number){const t=clamp((elapsed-120)/chunkDuration(count));const eased=t*t*(3-2*t);return t>=1?1:t<=0?0:.5-Math.sin(Math.PI/6-Math.PI*eased/3)}
+export function chunkAutoProgress(elapsed:number,count:number){const duration=chunkDuration(count);if(elapsed>=120+duration-1e-9)return 1;if(elapsed<=120)return 0;const t=clamp((elapsed-120)/duration),eased=clamp(t*t*t*(10+t*(-15+6*t)));return clamp(.5-Math.sin(Math.PI/6-Math.PI*eased/3))}
 
 export function isBrakeable(progress:number){const a=clamp(progress)*Math.PI;return a>PRESS_SCENE.brakeMinAngle&&a<Math.PI-PRESS_SCENE.brakeMinAngle}
 

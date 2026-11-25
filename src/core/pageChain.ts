@@ -27,6 +27,22 @@ export function sampleChain(chain:Chain,u:number){
   const tx=d0*ps[a]+d1*d*ts[a]+d2*ps[b]+d3*d*ts[b],tz=d0*ps[a+1]+d1*d*ts[a+1]+d2*ps[b+1]+d3*d*ts[b+1],len=Math.hypot(tx,tz)||1
   return {x,z,tx:tx/len,tz:tz/len}
 }
+// Reparameterize a deformed centerline by arc length, then project it
+// onto the prescribed total length while retaining its sewing-edge origin.
+// This is a geometric constraint projection, not an elastic equilibrium solve.
+export function projectChainLength(chain:Chain,segments=128):Chain{
+ const n=R.chainNodes,points=Array.from({length:segments+1},(_,i)=>sampleChain(chain,i/segments)),arc=new Float64Array(segments+1)
+ for(let i=1;i<=segments;i++)arc[i]=arc[i-1]+Math.hypot(points[i].x-points[i-1].x,points[i].z-points[i-1].z)
+ const total=arc[segments];if(total<=1e-12)return chain
+ const scale=chain.width/total,positions=new Float64Array(n*2),tangents=new Float64Array(n*2),root=points[0]
+ let cursor=0
+ for(let i=0;i<n;i++){
+  const length=total*i/(n-1);while(cursor<segments-1&&arc[cursor+1]<length)cursor++
+  const f=(length-arc[cursor])/Math.max(1e-12,arc[cursor+1]-arc[cursor]),p=sampleChain(chain,(cursor+f)/segments)
+  positions[i*2]=root.x+(p.x-root.x)*scale;positions[i*2+1]=root.z+(p.z-root.z)*scale;tangents[i*2]=p.tx;tangents[i*2+1]=p.tz
+ }
+ return {width:chain.width,positions,tangents}
+}
 // Analytic roll on top of the chain: integrate the tangent along the fold line,
 // map the landing coordinate back onto the chain, then lift outward only.
 // Fade the local roll out before switching its normal direction at the apex.

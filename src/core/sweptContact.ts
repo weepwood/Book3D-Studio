@@ -4,12 +4,15 @@ import {isSupportPair} from './meshContacts'
 export type SweptResult='clear'|'hit'|'uncertain'
 const at=(a:Triangle,b:Triangle,t:number)=>new Triangle(a.a.clone().lerp(b.a,t),a.b.clone().lerp(b.b,t),a.c.clone().lerp(b.c,t))
 const bounds=(a:Triangle,b:Triangle)=>new Box3().setFromPoints([a.a,a.b,a.c,b.a,b.b,b.c])
+// Same inclusive test as expanded Box3.intersectsBox, without allocating
+// a temporary box for every BVH node and candidate triangle pair.
+function overlaps(a:Box3,b:Box3,eps:number){return a.max.x+eps>=b.min.x&&a.min.x-eps<=b.max.x&&a.max.y+eps>=b.min.y&&a.min.y-eps<=b.max.y&&a.max.z+eps>=b.min.z&&a.min.z-eps<=b.max.z}
 // Conservative interval subdivision for linear vertex trajectories. A clear
 // result is a proof only for this interpolation, not for the nonlinear shader.
 // Exhausting the depth budget is explicitly uncertain, never silently clear.
 export function sweptTriangleContact(a0:Triangle,a1:Triangle,b0:Triangle,b1:Triangle,depth=8,eps=1e-6):SweptResult{
  const visit=(a:Triangle,c:Triangle,b:Triangle,d:Triangle,n:number):SweptResult=>{
-  if(!bounds(a,c).expandByScalar(eps).intersectsBox(bounds(b,d)))return 'clear'
+  if(!overlaps(bounds(a,c),bounds(b,d),eps))return 'clear'
   const mid=at(a,c,.5),other=at(b,d,.5)
   if([triangleContact(a,b,eps),triangleContact(mid,other,eps),triangleContact(c,d,eps)].some(k=>k==='penetration'||k==='coplanar'))return 'hit'
   if(n<=0)return 'uncertain'
@@ -32,19 +35,20 @@ export type MotionSnapshot={positions:Float32Array;indices:Uint32Array;materials
 // Topology must be identical across both captured poses. A mismatched or
 // exhausted interval is reported separately and cannot certify clearance.
 export function prepareSweptMesh(a:MotionSnapshot,b:MotionSnapshot):Node|null{
- if(a.positions.length!==b.positions.length||a.indices.length!==b.indices.length||!a.indices.every((v,i)=>v===b.indices[i]))return null
+ if(a.positions.length!==b.positions.length||a.positions.length%3!==0||a.indices.length!==b.indices.length||a.indices.length%3!==0||!a.indices.length||!a.indices.every((v,i)=>v===b.indices[i]&&v<a.positions.length/3)||!a.positions.every(Number.isFinite)||!b.positions.every(Number.isFinite))return null
+ if(!!a.materials!==!!b.materials||a.materials&&(a.materials.length!==a.indices.length/3||a.materials.length!==b.materials!.length||!a.materials.every((v,i)=>v===b.materials![i])))return null
  const out:MovingFace[]=[];for(let i=0;i+2<a.indices.length;i+=3){const tri=(s:MotionSnapshot)=>new Triangle(...[0,1,2].map(j=>new Vector3().fromArray(s.positions,s.indices[i+j]*3)) as [Vector3,Vector3,Vector3]);const start=tri(a),end=tri(b);out.push({start,end,box:bounds(start,end),material:a.materials?.[i/3]??255})}return makeTree(out)
 }
 // A proven stationary relative configuration can be classified once. Do not
 // exempt moving support faces merely because their endpoint normals match.
-function commonTranslation(a:MovingFace,b:MovingFace,eps=1e-6){
+function commonTranslation(a:MovingFace,b:MovingFace,eps=1e-10){
  const delta=a.end.a.clone().sub(a.start.a)
  return [a,b].every(f=>['a','b','c'].every(key=>{const k=key as 'a'|'b'|'c';return f.end[k].clone().sub(f.start[k]).distanceTo(delta)<=eps}))
 }
 export function scanSweptTrees(a:Node|null,b:Node|null,budget=256,names:[string,string]=['','']){
  const result={tested:0,hits:0,uncertain:0,support:0,touch:0,complete:true,topologyChanged:false}
  if(!a||!b){result.complete=false;result.topologyChanged=true;return result}
- const visit=(a:Node,b:Node)=>{if(!result.complete||!a.box.clone().expandByScalar(1e-6).intersectsBox(b.box))return;if(a.children){for(const c of a.children)visit(c,b);return}if(b.children){for(const c of b.children)visit(a,c);return}for(const f of a.faces??[])for(const g of b.faces??[]){if(!f.box.clone().expandByScalar(1e-6).intersectsBox(g.box))continue;if(result.tested>=budget){result.complete=false;return}result.tested++;if(commonTranslation(f,g)){
+ const visit=(a:Node,b:Node)=>{if(!result.complete||!overlaps(a.box,b.box,1e-6))return;if(a.children){for(const c of a.children)visit(c,b);return}if(b.children){for(const c of b.children)visit(a,c);return}for(const f of a.faces??[])for(const g of b.faces??[]){if(!overlaps(f.box,g.box,1e-6))continue;if(result.tested>=budget){result.complete=false;return}result.tested++;if(commonTranslation(f,g)){
  const kind=triangleContact(f.start,g.start,1e-6)
  if(kind==='touch'){result.touch++;continue}
  if(kind==='coplanar'&&isSupportPair(names[0],f.material,names[1],g.material)&&f.start.getNormal(new Vector3()).dot(g.start.getNormal(new Vector3()))<-.999){result.support++;continue}

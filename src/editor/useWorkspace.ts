@@ -18,7 +18,7 @@ export function useWorkspace(){
   function apply(fn:(h:History)=>History){setState(s=>{const h=fn(s.h);return h===s.h?s:{...s,h,w:saveProject(s.w,s.w.active,h.present)}})}
   function setConfig(fn:BookConfig|((c:BookConfig)=>BookConfig),group=''){const now=Date.now();apply(h=>edit(h,typeof fn==='function'?fn(h.present):fn,group,now))}
   function select(id:string){setState(s=>{const p=s.w.projects.find(p=>p.id===id);return !p||id===s.w.active?s:{w:{...s.w,active:id},h:history(p.config)}})}
-  function create(copy=false){setState(s=>{const old=s.w.projects.find(p=>p.id===s.w.active)!;const p=newProject(copy?old.name+' 副本':'未命名书籍',copy?{...s.h.present}:{...defaults,thicknessMode:'automatic',pageCount:320});return {w:{...s.w,active:p.id,projects:[...s.w.projects,p]},h:history(p.config)}})}
+  function create(copy=false){setState(s=>{const old=s.w.projects.find(p=>p.id===s.w.active)!;const p=newProject(copy?old.name+' 副本':'未命名书籍',copy?{...s.h.present}:{...defaults,thicknessMode:'automatic',paperPhysics:'material',pageCount:320});return {w:{...s.w,active:p.id,projects:[...s.w.projects,p]},h:history(p.config)}})}
   function remove(id:string){setState(s=>{const w=removeProject(s.w,id);return w===s.w?s:{w,h:w.active===s.w.active?s.h:history(w.projects.find(p=>p.id===w.active)!.config)}})}
   function rename(name:string){setState(s=>({...s,w:{...s.w,projects:s.w.projects.map(p=>p.id===s.w.active?{...p,name:name.slice(0,80)}:p)}}))}
   function setNotice(notice:string){setState(s=>({...s,notice}))}

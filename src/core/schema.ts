@@ -8,6 +8,10 @@ export type BookConfig = {
   thickness: number
   thicknessMode: 'manual' | 'automatic'
   paperThickness: number
+  paperPhysics: 'legacy' | 'material'
+  paperGrammage: number
+  paperModulus: number
+  paperDamping: number
   boardThickness: number
   cornerRadius: number
   pageInset: number
@@ -50,7 +54,7 @@ export type BookConfig = {
 }
 export const defaults: BookConfig = {
   version: 1, title: 'The Art of Making', subtitle: 'FIELD NOTES / VOLUME 01',
-  author: 'STUDIO EDITIONS', width: 150, height: 220, thickness: 32, thicknessMode: 'manual', paperThickness: .1, boardThickness: 2.5, cornerRadius: 1.2, pageInset: 2.5,
+  author: 'STUDIO EDITIONS', width: 150, height: 220, thickness: 32, thicknessMode: 'manual', paperThickness: .1, paperPhysics:'legacy', paperGrammage:80, paperModulus:3, paperDamping:1, boardThickness: 2.5, cornerRadius: 1.2, pageInset: 2.5,
   spineStyle: 'rounded', coverFlex: .28, pageCoupling: .45,
   coverColor: '#354d40', paperColor: '#e8dfca', inkColor: '#dec48d',
   finish: 'cloth', roughness: 0.68, coverImage: '', backImage:'', spineImage:'', backText:'', spineText:'',
@@ -58,7 +62,7 @@ export const defaults: BookConfig = {
   light: 3, background: '#e9e7df', interaction: 'click'
 }
 export const ranges = {
-  width:[90,250], height:[120,320], thickness:[8,80], paperThickness:[.04,.25],
+  width:[90,250], height:[120,320], thickness:[8,80], paperThickness:[.04,.25], paperGrammage:[30,300], paperModulus:[.5,8], paperDamping:[.5,2],
   boardThickness:[.8,3], cornerRadius:[0,4], pageInset:[1,4], coverFlex:[0,1], pageCoupling:[0,1],
   coverZoom:[1,3], coverX:[-1,1], coverY:[-1,1], backZoom:[1,3], backX:[-1,1], backY:[-1,1], spineZoom:[1,3], spineX:[-1,1], spineY:[-1,1],
   roughness:[0.05,1], opening:[0,180], pageCurl:[0,1], pageDuration:[.3,2], pageBleed:[0,.18], pageHover:[0,1], pageCorner:[0,1], pageCount:[2,2000], pageIndex:[0,1000], yaw:[-180,180], pitch:[-65,65], light:[0.2,6]
@@ -84,6 +88,7 @@ export function parseConfig(raw: unknown): BookConfig {
     if(typeof x !== 'string' || !/^#[0-9a-f]{6}$/i.test(x)) throw new Error('无效颜色')
     out[k] = x
   }
+  if(v.paperPhysics !== undefined){if(v.paperPhysics!=='legacy'&&v.paperPhysics!=='material')throw Error('无效纸张动力学模式');out.paperPhysics=v.paperPhysics}
   if(v.thicknessMode !== undefined) {
     if(v.thicknessMode !== 'automatic' && v.thicknessMode !== 'manual') throw Error('无效厚度模式')
     out.thicknessMode=v.thicknessMode

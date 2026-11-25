@@ -1,6 +1,6 @@
 import * as T from 'three'
 import {stackBend,stackSweep,offsetStackProfile,PRESS_STACK_PROFILE} from './stackProfile'
-import {sampleChain,rollPoint,type Chain} from './pageChain'
+import {sampleChain,rollPoint,projectChainLength,type Chain} from './pageChain'
 import {clamp} from './pagePhysics'
 // The reference's page model is much larger. Fit its angular profile to our
 // independent cover clearance before sampling; this is explicitly an adapter.
@@ -83,12 +83,12 @@ export function chunkRowProgress(progress:number,heightFraction:number,direction
 export function chunkEndpointWeight(p:number){const t=clamp(Math.min(p,1-p)/.15);return 1-t*t*(3-2*t)}
 // Independent world-space lift; zero at the sewing edge, smoothly applied
 // across the first .2 of page width. Tangents track the displaced curve.
-export function liftChunkChain(chain:Chain,lift:number,progress:number):Chain{
+export function liftChunkChain(chain:Chain,lift:number,progress:number,preserveArc=false):Chain{
  if(lift===0)return chain
  const n=chain.positions.length/2,positions=chain.positions.slice(),tangents=chain.tangents.slice(),p=clamp(progress),sign=1-2*p*p*(3-2*p)
  for(let i=0;i<n;i++){const u=clamp(i/(n-1)/.2),z=lift*u*u*(3-2*u);positions[i*2]-=chain.tangents[i*2+1]*z*sign;positions[i*2+1]+=chain.tangents[i*2]*z*sign}
  for(let i=0;i<n;i++){const a=Math.max(0,i-1)*2,b=Math.min(n-1,i+1)*2,x=positions[b]-positions[a],z=positions[b+1]-positions[a+1],d=Math.hypot(x,z)||1;tangents[i*2]=x/d;tangents[i*2+1]=z/d}
- return {width:chain.width,positions,tangents}
+ const lifted={width:chain.width,positions,tangents};return preserveArc?projectChainLength(lifted):lifted
 }
 // Height of the actual tessellated static block face in the open cover basis.
 // Interpolation follows the 48-column mesh, including the shortened curved edge.

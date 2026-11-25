@@ -24,3 +24,12 @@ it('翻页运动包络在固定适配后保留安全区，且静止范围独立�
  const stable={width:900,height:520,left:-280,right:280,top:-130,bottom:160,pageWidth:280},motion={left:-290,right:300,top:-310,bottom:160},chrome={top:40,bottom:80}
  const f=fitReadingMotion(stable,motion,chrome);expect(f.bounds.top+260).toBeGreaterThanOrEqual(40);expect(f.bounds.bottom+260).toBeLessThanOrEqual(440);expect(f.motionBounds.top+260).toBeGreaterThanOrEqual(8);expect(f.motionBounds.bottom+260).toBeLessThanOrEqual(512);expect(f.stableBounds.top).toBeGreaterThan(f.motionBounds.top);expect(clampReadingView(initialReadingView(),f.bounds)).toEqual(initialReadingView())
 })
+
+it('低帧率相机解析弹簧在同一实际时长内保持一致，不积压物理子步',()=>{
+ const a={zoom:1,x:0,y:0},b={...a},av={zoom:0,x:0,y:0},bv={...av},target={zoom:2,x:120,y:-80}
+ for(let i=0;i<12;i++)springReading(a,av,target,1/60)
+ springReading(b,bv,target,.2)
+ for(const key of ['zoom','x','y'] as const){expect(a[key]).toBeCloseTo(b[key],8);expect(av[key]).toBeCloseTo(bv[key],8)}
+ for(let i=0;i<10;i++)springReading(b,bv,target,.4)
+ expect(b).toEqual(target)
+})
