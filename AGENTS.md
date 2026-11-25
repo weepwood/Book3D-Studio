@@ -170,3 +170,7 @@ Desktop Commander 恢复连接。#19 d81a1af、#20 0bbacd6 最新五项检查均
 - V0.9 第十九轮（PR #27，基线27cef57八项CI全绿，目标feat/v0.9-reading而非main，累计97文件/18提交；定向审查未宣称全PR逐行）：首帧优先仅在真实有效运动或取消/关闭后恢复，暂停非可见新解码且可见变化唤醒，混合指针互斥及运行时重建保留当前档位。firstMotionTrace最多12帧及累计数，首输入到有效帧逐帧CPU/RAF/资源/进度证据。M4+SwiftShader各三组ON/OFF真实输入对照（第三组模拟无idle API），软件OFF319.6/300.6/418.1→ON590.5/327.1/514.3ms，M4 OFF29.5/34.3/47.7→ON47.7/35.3/51ms；所有请求无待解码，未证首运动收益，因此默认关闭inputPriority，?inputPriority=1保留完整策略，原预取/可见优先不变。软件近静止首帧render274–488ms、后续有效帧0.5–0.6ms，不能归因单一Shader；后续优先实际首个活动渲染路径而非修改物理。170单测/类型/构建、初版软件4项/M4八项全绿；证据docs/benchmarks/v0.9-first-frame-audit-m4.json，新门禁纳入CI，原依赖优先模式门禁明确开启不放宽。真实用户严重首翻、Windows实体GPU、长期内存、位图色彩及全PR累计复审仍待证，不提前合并发布。
 
 - 第十九轮补充：最终默认策略下SwiftShader 4/4及170单测、类型、构建通过，优先实验门禁显式开启；集中提交。
+
+- V0.9 第二十轮（PR #27，基线6fa8c65，目标feat/v0.9-reading）：r174阴影实际参数审查，?perf=1&drawAudit=1首输入CPU分解（阴影/颜色、叶/材质、程序新增、资源；嵌套非相加、非GPU完成），匹配活动叶depth预热BackSide/front map/既有shadow target/shadow camera，finally恢复、不额外绘制。M4/SwiftShader各3组成对真实输入，活动叶首阴影新增program1→0，软件首运动中位480.8→447.6ms、首render197.7→180.4ms、阴影184.1→155.6ms；M4首运动39.5→33.9ms、阴影10→5.4ms，首翻总883.3→908.6ms未改善。依据消除确定重复变体默认匹配，?depthWarm=0回退；软件普通depth组153–186ms且仍新增2程序，未归因单一驱动。封面/封底/书脊Image完成/损坏/替换/销毁释放src/事件/监听，真实像素验证，未认证长期内存。170单测/类型/构建、初始软件三组成对及M4七项通过；证据docs/benchmarks/v0.9-draw-audit-cover-m4.json，新cover门禁纳入CI，draw-audit手动。原物理/画质/正式版/并行工作区保持；未完成全PR逐行复审、实际用户严重冷启动和Windows实体GPU，不提前合并。
+
+- 第二十轮补充：最终默认SwiftShader 6/6、170单测/类型/构建通过，新旧落页814×716 RGBA完全一致，首活动叶depth新增1→0；M4对照在默认切换前明确开启验证。集中提交；不将落页像素等价扩展成全部运动逐帧认证。

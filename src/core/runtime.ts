@@ -19,6 +19,7 @@ import {desiredBatch,orderedProgress,openingLeaves,OPENING_DROP_MS,STACK_SETTLE_
 import {RenderProbe} from './renderProbe'
 import {RenderBudget,renderProfileLevel,readRenderProfile,type RenderProfile} from './renderBudget'
 import {observePrograms} from './programWarm'
+import {DrawAudit} from './drawAudit'
 import {PRESS_SCENE,coverProgress,presentationStep,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 const SETTLED_DROP=PRESS_SCENE.openDelayMs+STACK_SETTLE_MS
 export class BookRuntime {
@@ -45,6 +46,8 @@ export class BookRuntime {
   private fullShadowSize=2048
   private warmDrawTarget:T.WebGLRenderTarget|null=null
   private cancelProgramProbe:(()=>void)|null=null
+  private drawAudit:DrawAudit|null=null
+  private matchedDepthWarm=new URLSearchParams(location.search).get('depthWarm')!=='0'
   private readingWarmDone=false
   private readingWarmHandle:number|null=null
   private shaderWarmHandle:number|null=null
@@ -75,7 +78,18 @@ export class BookRuntime {
         this.renderer.compile(representative.leaf,this.camera,this.scene)
         // Borrow geometry/material, not a second visible object. The actual
         // shadow draw may still instantiate a driver-specific variant.
-        this.renderer.compile(new T.Mesh(representative.fm.geometry,representative.gpu.depth),this.camera,this.scene)
+        const depth=representative.gpu.depth
+        if(this.matchedDepthWarm&&this.light.shadow.map){
+          // Match r174 PCF depth side, map and linear output target. Compile
+          // only; the actual visible shadow pass still draws every leaf.
+          const previous=this.renderer.getRenderTarget(),side=depth.side,map=depth.map
+          try{
+            depth.side=T.BackSide;depth.map=representative.front.map
+            this.renderer.setRenderTarget(this.light.shadow.map)
+            this.renderer.compile(new T.Mesh(representative.fm.geometry,depth),this.light.shadow.camera,this.scene)
+          }finally{this.renderer.setRenderTarget(previous);depth.side=side;depth.map=map}
+          this.host.dataset.depthWarm='matched-submitted'
+        }else{this.renderer.compile(new T.Mesh(representative.fm.geometry,depth),this.camera,this.scene);this.host.dataset.depthWarm='legacy-submitted'}
         this.readingWarmDone=true;this.host.dataset.readingWarm='submitted';this.host.dataset.readingWarmMs=String(performance.now()-start)
         if(this.warmDrawEnabled){
           // Actual shadow/material draw, but an offscreen target has its own
@@ -215,6 +229,7 @@ export class BookRuntime {
     this.renderer=new T.WebGLRenderer({antialias:true,alpha:true})
     const rendererMs=performance.now()-phase;phase=performance.now()
     if(new URLSearchParams(location.search).get('perf')==='1')this.perf=new RenderProbe(this.renderer.getContext() as WebGL2RenderingContext,host)
+    if(this.perf&&new URLSearchParams(location.search).get('drawAudit')==='1')this.drawAudit=new DrawAudit(this.renderer)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=T.PCFShadowMap
     this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.outputColorSpace=T.SRGBColorSpace
@@ -382,7 +397,10 @@ export class BookRuntime {
     const shadowReuse=this.shadowCacheEnabled&&ready&&!this.turn&&!display.length&&!this.coverMotion&&this.dropElapsed>=SETTLED_DROP&&!this.shadowDirty&&shadowRevision===this.shadowRevision&&!!this.light.shadow.map
     this.renderer.shadowMap.autoUpdate=!shadowReuse
     this.perf?.beginGpu();const renderStart=performance.now(),firstRender=this.startupProbe?renderStart:0
-    try{this.renderer.render(this.scene,shown)}finally{this.renderer.shadowMap.autoUpdate=true}
+    const audit=this.firstCommandAt!==null?this.drawAudit:null
+    audit?.begin()
+    let drawBreakdown:ReturnType<DrawAudit['end']>|undefined
+    try{this.renderer.render(this.scene,shown)}finally{drawBreakdown=audit?.end();this.renderer.shadowMap.autoUpdate=true}
     this.perf?.endGpu()
     const effectiveMotion=!drop.length&&display.some(t=>t.progress>.002)
     const priorityHeld=this.backgroundDeferred
@@ -400,7 +418,7 @@ export class BookRuntime {
     if(this.firstCommandAt!==null&&this.perf){
       const frame=this.perf.frameSnapshot()
       this.firstCommandFrameCount++
-      if(this.firstCommandFrames.length<12)this.firstCommandFrames.push({...frame,rafTimestamp:now,rafCallbackLagMs:Math.max(0,frame.startedAt-now),fromRequestMs:frame.startedAt-this.firstCommandAt,ready,priorityHeld,progress:display[0]?.progress??0,active:display.length,effective:effectiveMotion})
+      if(this.firstCommandFrames.length<12)this.firstCommandFrames.push({...frame,rafTimestamp:now,rafCallbackLagMs:Math.max(0,frame.startedAt-now),fromRequestMs:frame.startedAt-this.firstCommandAt,ready,priorityHeld,progress:display[0]?.progress??0,active:display.length,effective:effectiveMotion,drawBreakdown})
     }
     if(this.firstCommandAt!==null&&effectiveMotion){
       const submitted=performance.now(),latency=submitted-this.firstCommandAt
@@ -461,7 +479,7 @@ export class BookRuntime {
     if(this.inputPriority&&(!this.turn||this.turn.preview)&&!this.backgroundDeferred){this.book.pauseBackground();this.backgroundDeferred=true}
     if(this.perf&&(!this.turn||this.turn.preview)&&this.firstCommandAt===null){
       const textures=this.book.textureMetrics()
-      this.firstCommandAt=now;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstCommandContext={direction,index:this.index,target:index,eventDispatchMs:eventTime!==undefined&&Number.isFinite(eventTime)&&eventTime>=0&&eventTime<=now?now-eventTime:null,warm:this.host.dataset.readingWarm??'none',programWarm:this.host.dataset.programWarm??'none',pendingTextures:textures.pendingTextures,misses:textures.misses,slots:textures.slots,decodeActive:textures.decode.active,decodeQueued:textures.decode.queued}
+      this.firstCommandAt=now;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstCommandContext={direction,index:this.index,target:index,eventDispatchMs:eventTime!==undefined&&Number.isFinite(eventTime)&&eventTime>=0&&eventTime<=now?now-eventTime:null,warm:this.host.dataset.readingWarm??'none',depthWarm:this.host.dataset.depthWarm??'none',programWarm:this.host.dataset.programWarm??'none',pendingTextures:textures.pendingTextures,misses:textures.misses,slots:textures.slots,decodeActive:textures.decode.active,decodeQueued:textures.decode.queued}
     }
     this.input.push(direction,now);this.perf?.markInput()
     this.releaseGoal=null;this.releaseIndex=null;this.config={...this.config,pageIndex:index}
@@ -479,7 +497,7 @@ export class BookRuntime {
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
     const keys=['width','height','boardThickness','cornerRadius','pageInset','spineStyle'] as const
     const rebuild=keys.some(k=>this.config[k]!==c[k]);const shapeChanged=(["paperPhysics","paperThickness","paperGrammage","paperModulus","paperDamping","pageCurl","pageCorner","pageCount","coverFlex","pageCoupling"] as const).some(k=>this.config[k]!==c[k]);const depthChanged=physicalBook(this.config).thickness!==physicalBook(c).thickness;const frameChanged=rebuild||depthChanged||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged||shapeChanged)this.resetHandoffProbes();if(frameChanged){this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
-    if(rebuild){this.backgroundDeferred=false;this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.programWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
+    if(rebuild){this.backgroundDeferred=false;this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
     if(rebuild||depthChanged||shapeChanged){this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality}
     if((depthChanged||shapeChanged)&&!rebuild){this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';delete this.host.dataset.workerCollision}
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
@@ -488,7 +506,7 @@ export class BookRuntime {
   switchProject(c:BookConfig){
     // A project change is not a page-turn command. Reset transient state
     // before applying the new model, while retaining the WebGL renderer.
-    this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false';this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
+    this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false';this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
     this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
     this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
     this.savedReading=null;this.cancelOrbitTransition();this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
@@ -710,5 +728,5 @@ export class BookRuntime {
     const background=this.scene.background,floorVisible=this.floor.visible;
     try{this.shadowDirty=true;this.renderer.shadowMap.autoUpdate=true;if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.applyRenderBudget(previousBudget);this.invalidate()}
   }
-  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.warmDrawTarget?.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
+  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();this.drawAudit?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.warmDrawTarget?.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }

@@ -285,3 +285,12 @@ PR #27 的 d9008d5 已通过 quick/capture/matched/triangle-contact/workspace，
 170单测/类型/生产构建通过。初版软件4项（包含6上下文成对对照及高清受控延迟）、M4八项（含6上下文、档位/位图、触控及120次键盘压力）通过。最终默认策略改变后，旧有依赖优先模式的固定档位和延迟解码门禁显式开启该模式，新对照OFF使用无参数默认；不降低任何端点/资源门禁。新增first-frame-audit.spec.ts纳入Reader browser-ui CI。原始证据docs/benchmarks/v0.9-first-frame-audit-m4.json。原正式版本和并行工作区保持，不提前合并。尚未完成用户实际环境首次严重卡顿复现、真实Windows/Safari/实体触控/笔、高DPI和全PR逐行复审，未认证长期无泄漏或默认位图色彩兼容。
 
 最终默认优先策略关闭后SwiftShader四项（1.6分钟）通过，包含无idle API双路径对照、固定性能档位、受控高清解码延迟以及实际连续输入/反向/拖动时间线；170单测、类型及构建最终复验通过。
+
+## 第二十轮：首次绘制通道实证与封面生命周期
+基线6fa8c65，PR #27目标feat/v0.9-reading。累计定向审查r174实际阴影材质参数、曲面Shader、输入及chunk/layer/section求解器的主要边界、封面加载及资源释放，非全PR逐行审查；不修改物理、几何、碰撞、端点、项目协议或正式版本。并行工作区已有未提交内容保持。
+新增?perf=1&drawAudit=1的CPU首输入绘制探针：仅有等待首有效帧的相对指令时记录shadowMap.render及renderBufferDirect，按阴影/颜色通道、活动叶/材质类型统计调用及新增program数、资源快照；时间为嵌套而非相加，dispose恢复原方法，不默认安装。浏览器实验额外包裹WebGL编译、链接、查询、纹理和缓冲区等调用（仅测试）；不能由API同步返回耗时直接推断驱动编译线程/GPU执行或显示延迟。
+依据Three r174 WebGLShadowMap PCF实际路径，代表性活动叶depth材质预热使用BackSide、实际front map、已有阴影renderTarget的线性色彩输出及shadow camera，finally恢复原target/side/map；仅compile不执行额外绘制。无shadow map时保留旧路径；开书自然绘制仍保持原行为。两渲染器各三组成对真实直接阅读，80页、index10、生成纸面、等待代表compile，独立context但共享GPU驱动缓存。SwiftShader首运动CPU提交旧480.8/463.7/515.0→匹配447.6/447.0/479.8ms，中位480.8→447.6ms；首渲染阶段197.7→180.4ms，阴影通道184.1→155.6ms（中位），新program3→2、活动叶depth新增1→0，旧6次compileShader/3次linkProgram→4/2。活动叶阴影CPU约2ms，其他28次depth材质绘制占153–186ms，仍有两个普通depth program在首绘制新增；不能将此全归因于Shader编译或实际GPU。M4首运动39.5/35.8/43.6→33.9/35.9/33.0ms，中位39.5→33.9ms，首阴影通道10.0→5.4ms，活动叶depth新增1→0；首翻总耗时中位883.3→908.6ms（未改善）。代表编译提交约1.3–1.4ms。无稳定总翻页速度收益认证；基于实际变体匹配且消除确定重复程序，默认采用匹配路径，?depthWarm=0回退。未新增离屏绘制、同步等待或降低默认画质。原priority仍默认关闭。
+封面/封底/书脊Image加载在完成、损坏或Texture.dispose时解除回调、src及dispose listener；防止素材编辑/模型销毁后旧Image继续保留。使用真实DOM Image、同一任务替换三面、坏数据、再次换图后销毁，三旧/三完成/三销毁对象均释放；真实新封面[40,184,224,255]与书脊[187,204,68,255]中心像素正确。此项修复未宣称消除所有浏览器原生内存增长。
+170单测、类型检查、生产构建通过；初始软件三组成对draw-audit、M4七项（六上下文对照、cover生命周期、素材导入导出、原120次输入）通过。新cover-lifecycle纳入reader UI CI；draw-audit为手动诊断/对照门禁。原始证据docs/benchmarks/v0.9-draw-audit-cover-m4.json。后续优先普通depth变体首次创建与实际用户设备复现，保留真实Windows/Safari/长期内存及全PR逐行审查为未验收，不提前合并。
+
+最终默认匹配预热路径SwiftShader 6/6通过（1.9分钟），新旧814×716落页RGBA截图全部通道一致（mean/max/changed=0），活动叶首次阴影新增program旧1/新0，cover释放、静止阴影缓存、连续输入、反向/拖动、低帧率及资源边界回归通过。最终170单测/类型/构建通过。未单独认证匹配预热活动中的逐像素等价；M4专项在默认切换之前明确开启匹配完成对照。

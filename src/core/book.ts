@@ -53,7 +53,21 @@ function cover(c:BookConfig,face:'cover'|'back'|'spine'='cover') {
   const image=c[face+'Image' as 'coverImage'|'backImage'|'spineImage']
   const zoom=c[face+'Zoom' as 'coverZoom'|'backZoom'|'spineZoom'],x=c[face+'X' as 'coverX'|'backX'|'spineX'],y=c[face+'Y' as 'coverY'|'backY'|'spineY']
   if(image){
-    const img=new Image();img.onload=()=>{if(map.userData.disposed)return;const ratio=Math.max(el.width/img.width,el.height/img.height)*zoom;const w=img.width*ratio,h=img.height*ratio;ctx.drawImage(img,(el.width-w)*(1+x)/2,(el.height-h)*(1+y)/2,w,h);map.needsUpdate=true;map.userData.invalidate?.()};img.src=image
+    const img=new Image()
+    // Texture replacement must cancel obsolete source loads, not just ignore
+    // their eventual callback. The composed canvas owns the pixels afterwards.
+    const release=()=>{img.onload=null;img.onerror=null;img.removeAttribute('src');map.removeEventListener('dispose',release)}
+    map.addEventListener('dispose',release)
+    img.onerror=release
+    img.onload=()=>{
+      try{
+        if(map.userData.disposed||!img.naturalWidth||!img.naturalHeight)return
+        const ratio=Math.max(el.width/img.naturalWidth,el.height/img.naturalHeight)*zoom,w=img.naturalWidth*ratio,h=img.naturalHeight*ratio
+        ctx.drawImage(img,(el.width-w)*(1+x)/2,(el.height-h)*(1+y)/2,w,h)
+        map.needsUpdate=true;map.userData.invalidate?.()
+      }finally{release()}
+    }
+    img.src=image
   }
   return map
 }
