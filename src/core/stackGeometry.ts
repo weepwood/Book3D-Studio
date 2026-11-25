@@ -96,6 +96,23 @@ export function stackHeightSampler(chain:Chain,anchorX:number,anchorZ:number,sig
  const points=Array.from({length:49},(_,i)=>{const p=sampleChain(chain,i/48);return {x:anchorX+sign*p.x,z:anchorZ+p.z}});if(sign===-1)points.reverse()
  return (x:number)=>{if(x<points[0].x-.001||x>points[48].x+.001)return -Infinity;let lo=0,hi=48;while(hi-lo>1){const mid=(lo+hi)>>1;if(points[mid].x<x)lo=mid;else hi=mid}const a=points[lo],b=points[hi];return T.MathUtils.lerp(a.z,b.z,clamp((x-a.x)/Math.max(1e-8,b.x-a.x)))}
 }
+// One-sided Lipschitz majorant: only add clearance, never remove it.
+// The binding column is immutable; propagate its lift outward but never
+// move it to satisfy a neighboring column. Endpoint blend controls strength.
+export function spreadClearance(lifts:Float64Array,cols:number,rows:number,dx:number,dy:number,strength:number){
+ if(strength<=0)return
+ const proposed=lifts.slice(),sx=dx*.45,sy=dy*.45
+ for(let row=0;row<rows;row++){
+  const start=row*cols
+  for(let c=1;c<cols;c++){const k=start+c;proposed[k]=Math.max(proposed[k],proposed[k-1]-sx)}
+  for(let c=cols-2;c>=1;c--){const k=start+c;proposed[k]=Math.max(proposed[k],proposed[k+1]-sx)}
+ }
+ for(let c=1;c<cols;c++){
+  for(let row=1;row<rows;row++){const k=row*cols+c;proposed[k]=Math.max(proposed[k],proposed[k-cols]-sy)}
+  for(let row=rows-2;row>=0;row--){const k=row*cols+c;proposed[k]=Math.max(proposed[k],proposed[k+cols]-sy)}
+ }
+ for(let i=0;i<lifts.length;i++)lifts[i]+=(proposed[i]-lifts[i])*strength
+}
 export type ChunkLayer={chain:Chain;x:number;z:number}
 export function createChunkGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),baseUV=Float32Array.from(uv.array),normal=g.getAttribute('normal')
@@ -103,13 +120,17 @@ export function createChunkGeometry(w:number,h:number){
  const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
  const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
  const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),liftKeys=Int32Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48));const handoffVertices=faceIndices.map(indices=>[...new Set(indices)]);const columns=materialColumns(original,w),rowIndices=Uint8Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS));let lastRepeat=NaN
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number){
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number,slidingLayers=false){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
    const samples=(rows??[chain]).map(c=>columns.u.map(u=>sampleChain(c,u))),layerSamples=layers?.map(l=>columns.u.map(u=>sampleChain(l.chain,u)))
-   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=rowIndices[i],col=columns.indices[i],a=samples[rows?row:0][col],off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layerIndex=Math.round((original[i*3+2]+.5)*2),layer=layers?.[layerIndex];if(layer){const p=layerSamples![layerIndex][col];x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
+   // A loose stack bends through layer slip rather than stretching the outer
+   // fibers of a bonded solid. Use the sewn-edge normal for parallel layer
+   // translations; actual bound-layer endpoints still override this pose.
+   const slipNormals=slidingLayers?(rows??[chain]).map(c=>sampleChain(c,0)):null
+   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=rowIndices[i],col=columns.indices[i],a=samples[rows?row:0][col],off=original[i*3+2]*depth,offsetNormal=slipNormals?.[rows?row:0]??a;let x=a.x-offsetNormal.tz*off,z=a.z+offsetNormal.tx*off;const layerIndex=Math.round((original[i*3+2]+.5)*2),layer=layers?.[layerIndex];if(layer){const p=layerSamples![layerIndex][col];x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
    // Translate complete material cross-sections rather than clipping only
    // the bottom vertices. Preserve local thickness while clearing the stack.
-   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}for(let i=0;i<p.count;i++){const lift=lifts[liftKeys[i]];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
+   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}if(slidingLayers)spreadClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,1-weight);for(let i=0;i<p.count;i++){const lift=lifts[liftKeys[i]];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
    const repeat=paperEdgeRepeat(w,depth,leafPitch);if(repeat!==lastRepeat){lastRepeat=repeat;for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true}
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
    if(overlay){

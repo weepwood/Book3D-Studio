@@ -55,7 +55,7 @@ export function rollPoint(chain:Chain,u:number,v:number,height:number,amount:num
   const tilt=grip*c.foldTiltDeg*Math.PI/180,dx=Math.cos(tilt),dy=Math.sin(tilt)
   const xi=(x-c.pivotU*w)*dx+(y-(c.pivotV-.5)*height)*dy
   if(xi<=0)return [base.x,y,base.z] as const
-  const span=c.span/R.sourcePageWidth*w*(1+(1-clamp(grabU))*1.2),steps=Math.max(1,Math.ceil(xi/(span/64))),ds=xi/steps
+  const span=c.span/R.sourcePageWidth*w*(1+(1-clamp(grabU))*1.2),steps=Math.min(128,Math.max(1,Math.ceil(xi/(span/64)))),ds=xi/steps
   let along=0,out=0
   for(let i=0;i<steps;i++){const s=clamp((i+.5)*ds/span),a=Math.min(Math.PI,amount*Math.pow(s,c.power));along+=Math.cos(a)*ds;out+=Math.sin(a)*ds}
   const shift=along-xi,landX=x+shift*dx,landU=clamp(landX/w),land=sampleChain(chain,landU),extra=landX-landU*w,sign=progress>.5?-1:1

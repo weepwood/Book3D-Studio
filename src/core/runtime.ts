@@ -91,6 +91,7 @@ export class BookRuntime {
   private meshProbeTotal={frames:0,segments:0,hits:0,byMesh:{} as Record<string,number>,byPhase:{} as Record<string,number>,examples:[] as unknown[]}
   private frameProbeEnabled=new URLSearchParams(location.search).get('frame')==='1'
   private curveProbeEnabled=new URLSearchParams(location.search).get('curve')==='1'
+  private surfaceProbeEnabled=new URLSearchParams(location.search).get('surface')==='1'
   private frameOverflow=0
   private frameSamples=0
   private collisionEnabled=new URLSearchParams(location.search).get('collision')==='1'
@@ -277,7 +278,7 @@ export class BookRuntime {
       this.contactWorker??=new ContactWorkerClient(reply=>{if(!this.disposed&&!this.contextLost)this.host.dataset.workerCollision=JSON.stringify({...reply,dropped:this.contactWorker?.dropped??0})})
       this.contactWorker.request(()=>this.book.workerContactSnapshot())
     }
-    this.perf?.phase('diagnostics');this.host.dataset.geometryRevision=String(this.geometryRevision);if(this.perf)this.host.dataset.geometryMetrics=JSON.stringify(this.book.geometryMetrics());if(this.curveProbeEnabled)this.host.dataset.curveQuality=JSON.stringify(this.book.curveQuality());this.host.dataset.textureCache=JSON.stringify(this.book.textureMetrics());this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.perf?.phase('metrics');this.perf?.finish(this.turn&&!this.turn.preview?'active':'idle')
+    if(this.surfaceProbeEnabled&&display.length)this.host.dataset.surfaceQuality=JSON.stringify(this.book.measureActiveSurfaces());this.perf?.phase('diagnostics');this.host.dataset.geometryRevision=String(this.geometryRevision);if(this.perf)this.host.dataset.geometryMetrics=JSON.stringify(this.book.geometryMetrics());if(this.curveProbeEnabled)this.host.dataset.curveQuality=JSON.stringify(this.book.curveQuality());this.host.dataset.textureCache=JSON.stringify(this.book.textureMetrics());this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.perf?.phase('metrics');this.perf?.finish(this.turn&&!this.turn.preview?'active':'idle')
     if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<SETTLED_DROP||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){

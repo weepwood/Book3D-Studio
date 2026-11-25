@@ -33,7 +33,7 @@ vec3 ppShape(vec3 p,out vec3 n){
   vec2 d=vec2(cos(ppTilt),sin(ppTilt));
   float xi=dot(vec2(x-.74*ppWidth,y),d);
   if(ppAmount<1e-6||xi<=0.0||u<=0.0)return ppClearance(base,n);
-  float steps=max(1.0,ceil(xi/(ppSpan/64.0))),ds=xi/steps;
+  float steps=clamp(ceil(xi/(ppSpan/64.0)),1.0,128.0),ds=xi/steps;
   vec2 roll=vec2(0.0);
   for(int i=0;i<128;i++){
     if(float(i)>=steps)break;
@@ -55,13 +55,14 @@ export function createGpuPage(width:number,height:number){
   const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1},ppFloor:{value:-1e6}}
   function attach(material:T.Material){
     const prior=material.onBeforeCompile.bind(material),priorKey=material.customProgramCacheKey()
-    material.customProgramCacheKey=()=> 'book3d-chain-roll-v2:'+priorKey
+    material.customProgramCacheKey=()=> 'book3d-chain-roll-v3:'+priorKey
     material.onBeforeCompile=(shader,renderer)=>{
       prior(shader,renderer)
       Object.assign(shader.uniforms,uniforms)
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\n'+shaderSource)
-        .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nvec3 ppNormal; ppShape(position,ppNormal); objectNormal=ppNormal;')
-        .replace('#include <begin_vertex>','vec3 ppUnusedNormal; vec3 transformed=ppShape(position,ppUnusedNormal);')
+        .replace('void main() {','void main() {\nvec3 ppNormal; vec3 ppPosition=ppShape(position,ppNormal);')
+        .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nobjectNormal=ppNormal;')
+        .replace('#include <begin_vertex>','vec3 transformed=ppPosition;')
     }
   }
   const depth=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,side:T.DoubleSide});attach(depth)

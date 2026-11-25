@@ -1,0 +1,1332 @@
+{
+  "date": "2026-11-25",
+  "baselineRevision": "e3ff851",
+  "hardware": "Apple M4 / Edge / Metal",
+  "method": "Sequential single-run comparisons, CPU proxy/tessellated geometry, diagnostic enabled, not GPU readback or fixed identical motion samples",
+  "baseline": {
+    "shaderMs": 3.700000047683716,
+    "samples": [
+      {
+        "index": 51,
+        "cache": {
+          "size": 13,
+          "capacity": 24,
+          "hits": 13,
+          "misses": 13,
+          "evictions": 0,
+          "estimatedBytes": 135416320,
+          "peakEstimatedBytes": 135416320,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 200,
+          "stackPoseCount": 33,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 52,
+        "cache": {
+          "size": 16,
+          "capacity": 24,
+          "hits": 18,
+          "misses": 16,
+          "evictions": 0,
+          "estimatedBytes": 166666240,
+          "peakEstimatedBytes": 166666240,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 223,
+          "stackPoseCount": 35,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 53,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 23,
+          "misses": 19,
+          "evictions": 0,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 246,
+          "stackPoseCount": 37,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 60,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 28,
+          "misses": 24,
+          "evictions": 5,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 309,
+          "stackPoseCount": 39,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 31,
+          "misses": 29,
+          "evictions": 10,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 384,
+          "stackPoseCount": 41,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 241,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 34,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 406,
+          "stackPoseCount": 43,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 40,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 428,
+          "stackPoseCount": 45,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 100,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 47,
+          "misses": 37,
+          "evictions": 18,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 503,
+          "stackPoseCount": 47,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 99,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 52,
+          "misses": 40,
+          "evictions": 21,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 526,
+          "stackPoseCount": 49,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 500,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 55,
+          "misses": 45,
+          "evictions": 26,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 604,
+          "stackPoseCount": 51,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 501,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 58,
+          "misses": 48,
+          "evictions": 29,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 626,
+          "stackPoseCount": 53,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 499,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 70,
+          "misses": 51,
+          "evictions": 32,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 636,
+          "stackPoseCount": 56,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 800,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 73,
+          "misses": 56,
+          "evictions": 37,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 713,
+          "stackPoseCount": 58,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 801,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 75,
+          "misses": 58,
+          "evictions": 39,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 735,
+          "stackPoseCount": 60,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 799,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 87,
+          "misses": 62,
+          "evictions": 43,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 745,
+          "stackPoseCount": 63,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 50,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 90,
+          "misses": 67,
+          "evictions": 48,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 824,
+          "stackPoseCount": 65,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      }
+    ],
+    "curve": {
+      "samples": 741,
+      "maxRelativeLengthError": 3.4805442242418294e-05,
+      "maxRootError": 0,
+      "maxCurvature": 79.19791863662431,
+      "maxEnergyPerWidth": 0.0013201090684538217
+    },
+    "surface": {
+      "leaf": {
+        "samples": 272,
+        "triangles": 470016,
+        "invalid": 0,
+        "maxAreaError": 0.28734862548815676,
+        "maxStretch": 0.06898098720460433,
+        "maxCompression": 0.28734853324812515,
+        "maxTotalAreaError": 0.09426248559627648
+      },
+      "chunk": {
+        "samples": 882,
+        "triangles": 1016064,
+        "invalid": 0,
+        "maxAreaError": 1.4358579295510943,
+        "maxStretch": 1.4358564303965373,
+        "maxCompression": 0.9788528484676325,
+        "maxTotalAreaError": 0.22829613830540918
+      },
+      "handoff": {
+        "samples": 0,
+        "triangles": 0,
+        "invalid": 0,
+        "maxAreaError": 0,
+        "maxStretch": 0,
+        "maxCompression": 0,
+        "maxTotalAreaError": 0
+      }
+    },
+    "perf": {
+      "frames": 822,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999891,
+        "p95": 16.799999999999272,
+        "p99": 33.46600000000035
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 0.9000000953674316,
+        "p95": 3.0999999046325684,
+        "p99": 3.6000001430511475
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 17,
+        "p50": 8.700000047683716,
+        "p95": 14.299999952316284,
+        "p99": 14.299999952316284
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 0.857125,
+        "p95": 1.42725,
+        "p99": 1.955083
+      },
+      "slowFrames": [
+        {
+          "duration": 93.5,
+          "state": "idle",
+          "phases": {
+            "start": 0.09999990463256836,
+            "opening": 0.20000004768371582,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.10000014305114746,
+            "render": 92.79999995231628,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0.20000004768371582
+          }
+        }
+      ]
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  },
+  "initialSlip": {
+    "shaderMs": 4,
+    "samples": [
+      {
+        "index": 51,
+        "cache": {
+          "size": 13,
+          "capacity": 24,
+          "hits": 13,
+          "misses": 13,
+          "evictions": 0,
+          "estimatedBytes": 135416320,
+          "peakEstimatedBytes": 135416320,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 197,
+          "stackPoseCount": 33,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 52,
+        "cache": {
+          "size": 16,
+          "capacity": 24,
+          "hits": 18,
+          "misses": 16,
+          "evictions": 0,
+          "estimatedBytes": 166666240,
+          "peakEstimatedBytes": 166666240,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 220,
+          "stackPoseCount": 35,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 53,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 23,
+          "misses": 19,
+          "evictions": 0,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 243,
+          "stackPoseCount": 37,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 60,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 28,
+          "misses": 24,
+          "evictions": 5,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 305,
+          "stackPoseCount": 39,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 31,
+          "misses": 29,
+          "evictions": 10,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 380,
+          "stackPoseCount": 41,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 241,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 34,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 403,
+          "stackPoseCount": 43,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 40,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 426,
+          "stackPoseCount": 45,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 100,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 47,
+          "misses": 37,
+          "evictions": 18,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 500,
+          "stackPoseCount": 47,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 99,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 52,
+          "misses": 40,
+          "evictions": 21,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 522,
+          "stackPoseCount": 49,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 500,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 55,
+          "misses": 45,
+          "evictions": 26,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 600,
+          "stackPoseCount": 51,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 501,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 58,
+          "misses": 48,
+          "evictions": 29,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 622,
+          "stackPoseCount": 53,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 499,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 70,
+          "misses": 51,
+          "evictions": 32,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 632,
+          "stackPoseCount": 56,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 800,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 73,
+          "misses": 56,
+          "evictions": 37,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 710,
+          "stackPoseCount": 58,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 801,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 76,
+          "misses": 59,
+          "evictions": 40,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 733,
+          "stackPoseCount": 60,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 799,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 88,
+          "misses": 62,
+          "evictions": 43,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 743,
+          "stackPoseCount": 63,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 50,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 91,
+          "misses": 67,
+          "evictions": 48,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 822,
+          "stackPoseCount": 65,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      }
+    ],
+    "curve": {
+      "samples": 739,
+      "maxRelativeLengthError": 3.4805442242418294e-05,
+      "maxRootError": 0,
+      "maxCurvature": 79.59457740152538,
+      "maxEnergyPerWidth": 0.0013161788314400298
+    },
+    "surface": {
+      "leaf": {
+        "samples": 271,
+        "triangles": 468288,
+        "invalid": 0,
+        "maxAreaError": 0.2809587533003053,
+        "maxStretch": 0.0537044081616358,
+        "maxCompression": 0.2809586602332186,
+        "maxTotalAreaError": 0.10528348536731269
+      },
+      "chunk": {
+        "samples": 880,
+        "triangles": 1013760,
+        "invalid": 0,
+        "maxAreaError": 2.2022395727501665,
+        "maxStretch": 2.202237601924203,
+        "maxCompression": 0.9902560611611279,
+        "maxTotalAreaError": 0.13073458241020408
+      },
+      "handoff": {
+        "samples": 0,
+        "triangles": 0,
+        "invalid": 0,
+        "maxAreaError": 0,
+        "maxStretch": 0,
+        "maxCompression": 0,
+        "maxTotalAreaError": 0
+      }
+    },
+    "perf": {
+      "frames": 821,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999891,
+        "p95": 16.80000000000291,
+        "p99": 166.65999999999985
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 0.8000001907348633,
+        "p95": 1.4000000953674316,
+        "p99": 2.8999998569488525
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 17,
+        "p50": 7.200000047683716,
+        "p95": 15.899999856948853,
+        "p99": 15.899999856948853
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 0.899749,
+        "p95": 1.701999,
+        "p99": 2.275874
+      },
+      "slowFrames": [
+        {
+          "duration": 92.70000004768372,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.09999990463256836,
+            "motion": 0,
+            "geometry": 0.10000014305114746,
+            "camera": 0.09999990463256836,
+            "render": 92.20000004768372,
+            "picking": 0.09999990463256836,
+            "diagnostics": 0,
+            "metrics": 0.10000014305114746
+          }
+        },
+        {
+          "duration": 243,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 1.2999999523162842,
+            "motion": 0.20000004768371582,
+            "geometry": 1.9000000953674316,
+            "camera": 0,
+            "render": 238.09999990463257,
+            "picking": 0.09999990463256836,
+            "diagnostics": 1.4000000953674316,
+            "metrics": 0
+          }
+        }
+      ]
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  },
+  "final": {
+    "shaderMs": 3.200000047683716,
+    "samples": [
+      {
+        "index": 51,
+        "cache": {
+          "size": 13,
+          "capacity": 24,
+          "hits": 13,
+          "misses": 13,
+          "evictions": 0,
+          "estimatedBytes": 135416320,
+          "peakEstimatedBytes": 135416320,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 197,
+          "stackPoseCount": 33,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 52,
+        "cache": {
+          "size": 16,
+          "capacity": 24,
+          "hits": 18,
+          "misses": 16,
+          "evictions": 0,
+          "estimatedBytes": 166666240,
+          "peakEstimatedBytes": 166666240,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 219,
+          "stackPoseCount": 35,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 53,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 23,
+          "misses": 19,
+          "evictions": 0,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 242,
+          "stackPoseCount": 37,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 60,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 28,
+          "misses": 24,
+          "evictions": 5,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 305,
+          "stackPoseCount": 39,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 31,
+          "misses": 29,
+          "evictions": 10,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 380,
+          "stackPoseCount": 41,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 241,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 34,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 402,
+          "stackPoseCount": 43,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 40,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 425,
+          "stackPoseCount": 45,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 100,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 47,
+          "misses": 37,
+          "evictions": 18,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 499,
+          "stackPoseCount": 47,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 99,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 52,
+          "misses": 40,
+          "evictions": 21,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 521,
+          "stackPoseCount": 49,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 500,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 55,
+          "misses": 45,
+          "evictions": 26,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 599,
+          "stackPoseCount": 51,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 501,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 58,
+          "misses": 48,
+          "evictions": 29,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 622,
+          "stackPoseCount": 53,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 499,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 70,
+          "misses": 51,
+          "evictions": 32,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 632,
+          "stackPoseCount": 56,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 800,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 73,
+          "misses": 56,
+          "evictions": 37,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 709,
+          "stackPoseCount": 58,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 801,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 76,
+          "misses": 59,
+          "evictions": 40,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 732,
+          "stackPoseCount": 60,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 799,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 88,
+          "misses": 62,
+          "evictions": 43,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 743,
+          "stackPoseCount": 63,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 50,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 91,
+          "misses": 67,
+          "evictions": 48,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 821,
+          "stackPoseCount": 65,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      }
+    ],
+    "curve": {
+      "samples": 739,
+      "maxRelativeLengthError": 3.4805608284069276e-05,
+      "maxRootError": 0,
+      "maxCurvature": 79.19791863662469,
+      "maxEnergyPerWidth": 0.001312406822995355
+    },
+    "surface": {
+      "leaf": {
+        "samples": 273,
+        "triangles": 471744,
+        "invalid": 0,
+        "maxAreaError": 0.27940886940793286,
+        "maxStretch": 0.05374127487468461,
+        "maxCompression": 0.2794087761402412,
+        "maxTotalAreaError": 0.1043280249378512
+      },
+      "chunk": {
+        "samples": 878,
+        "triangles": 1011456,
+        "invalid": 0,
+        "maxAreaError": 0.8920807455011386,
+        "maxStretch": 0.8920795810155424,
+        "maxCompression": 0.45143091326789386,
+        "maxTotalAreaError": 0.15786372205924581
+      },
+      "handoff": {
+        "samples": 0,
+        "triangles": 0,
+        "invalid": 0,
+        "maxAreaError": 0,
+        "maxStretch": 0,
+        "maxCompression": 0,
+        "maxTotalAreaError": 0
+      }
+    },
+    "perf": {
+      "frames": 820,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999891,
+        "p95": 16.799999999999272,
+        "p99": 183.32600000000093
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 0.8000001907348633,
+        "p95": 2.4000000953674316,
+        "p99": 3.200000047683716
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 17,
+        "p50": 10.400000095367432,
+        "p95": 14.5,
+        "p99": 14.5
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 0.799749,
+        "p95": 0.993124,
+        "p99": 1.662249
+      },
+      "slowFrames": [
+        {
+          "duration": 64.20000004768372,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.09999990463256836,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.20000004768371582,
+            "render": 63.60000014305115,
+            "picking": 0.09999990463256836,
+            "diagnostics": 0,
+            "metrics": 0.09999990463256836
+          }
+        }
+      ]
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  },
+  "narrowBaseline": {
+    "surface": {
+      "leaf": {
+        "samples": 96,
+        "triangles": 165888,
+        "invalid": 0,
+        "maxAreaError": 0.016795395029152393,
+        "maxStretch": 0.01486749553940414,
+        "maxCompression": 0.01679511980163817,
+        "maxTotalAreaError": 0.0016042264136351125
+      },
+      "chunk": {
+        "samples": 422,
+        "triangles": 486144,
+        "invalid": 0,
+        "maxAreaError": 1.317844851214586,
+        "maxStretch": 1.3178438775557537,
+        "maxCompression": 0.9806609792357983,
+        "maxTotalAreaError": 0.19017981592601385
+      },
+      "handoff": {
+        "samples": 0,
+        "triangles": 0,
+        "invalid": 0,
+        "maxAreaError": 0,
+        "maxStretch": 0,
+        "maxCompression": 0,
+        "maxTotalAreaError": 0
+      }
+    },
+    "sweep": {
+      "reports": 49,
+      "pairs": 341,
+      "tested": 6592,
+      "hits": 267,
+      "uncertain": 1718,
+      "incomplete": 103,
+      "support": 1268,
+      "touch": 1316
+    }
+  },
+  "narrowInitialSlip": {
+    "surface": {
+      "leaf": {
+        "samples": 99,
+        "triangles": 171072,
+        "invalid": 0,
+        "maxAreaError": 0.017412179727775312,
+        "maxStretch": 0.012642877521998663,
+        "maxCompression": 0.017411904672916978,
+        "maxTotalAreaError": 0.0016647528627090624
+      },
+      "chunk": {
+        "samples": 420,
+        "triangles": 483840,
+        "invalid": 0,
+        "maxAreaError": 0.9863445087374376,
+        "maxStretch": 0.9863436743322032,
+        "maxCompression": 0.9126043512122433,
+        "maxTotalAreaError": 0.07987491725903273
+      },
+      "handoff": {
+        "samples": 0,
+        "triangles": 0,
+        "invalid": 0,
+        "maxAreaError": 0,
+        "maxStretch": 0,
+        "maxCompression": 0,
+        "maxTotalAreaError": 0
+      }
+    },
+    "sweep": {
+      "reports": 49,
+      "pairs": 346,
+      "tested": 6592,
+      "hits": 212,
+      "uncertain": 1835,
+      "incomplete": 103,
+      "support": 1268,
+      "touch": 1316
+    }
+  },
+  "narrowFinal": {
+    "surface": {
+      "leaf": {
+        "samples": 98,
+        "triangles": 169344,
+        "invalid": 0,
+        "maxAreaError": 0.016868616363853395,
+        "maxStretch": 0.014943942869737104,
+        "maxCompression": 0.016868341156835664,
+        "maxTotalAreaError": 0.0016119153932853125
+      },
+      "chunk": {
+        "samples": 420,
+        "triangles": 483840,
+        "invalid": 0,
+        "maxAreaError": 1.2345615269725378,
+        "maxStretch": 1.234560588298594,
+        "maxCompression": 0.4738263792254994,
+        "maxTotalAreaError": 0.060962031723786336
+      },
+      "handoff": {
+        "samples": 0,
+        "triangles": 0,
+        "invalid": 0,
+        "maxAreaError": 0,
+        "maxStretch": 0,
+        "maxCompression": 0,
+        "maxTotalAreaError": 0
+      }
+    },
+    "sweep": {
+      "reports": 49,
+      "pairs": 341,
+      "tested": 6528,
+      "hits": 223,
+      "uncertain": 1712,
+      "incomplete": 102,
+      "support": 1268,
+      "touch": 1316
+    }
+  }
+}

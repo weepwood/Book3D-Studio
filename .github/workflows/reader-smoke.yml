@@ -33,6 +33,7 @@ on:
       - 'src/core/textureBudget.ts'
       - 'src/core/paperMaterial.ts'
       - 'src/core/curveMetrics.ts'
+      - 'src/core/surfaceMetrics.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
@@ -111,7 +112,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts browser-tests/swept-contact.spec.ts browser-tests/solid-contact.spec.ts browser-tests/contact-worker.spec.ts
+      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts browser-tests/swept-contact.spec.ts browser-tests/material-contact.spec.ts browser-tests/solid-contact.spec.ts browser-tests/contact-worker.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

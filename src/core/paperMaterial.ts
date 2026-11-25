@@ -22,3 +22,11 @@ export function paperMaterial(c:BookConfig){
  const response=legacy?1:clamp(Math.sqrt((c.paperGrammage/80)/(ratio**.25))*.5+.5,.65,1.7)
  return {rigidity,massPerArea,massPerLeaf,estimatedPaperMass:massPerLeaf*physicalBook(c).leaves,flex,response,damping:legacy?1:c.paperDamping}
 }
+
+// Bound corner roll in the material adapter: the source's high angle is a
+// visual effect, not an elastic strain solution. Smooth saturation avoids a
+// derivative jump at a hard cap; legacy mode preserves the original effect.
+export function materialCurlAmount(amount:number,flex:number,enabled:boolean){
+ const a=Math.max(0,amount)*flex
+ return enabled?2.4*Math.tanh(a/2.4):a
+}
