@@ -42,7 +42,7 @@ test('自动物理厚度、千页导航、翻页中增页及原位几何守恒',
  await expect.poll(async()=> (await metrics()).configuredDepth).toBeCloseTo(1,6)
  await page.screenshot({path:info.outputPath('2000-pages.png')})
  const texture=JSON.parse((await host.getAttribute('data-texture-cache'))!)
- expect(texture.size).toBeLessThanOrEqual(texture.capacity);expect(texture.hits).toBeGreaterThan(0)
+ expect(texture.size).toBeLessThanOrEqual(texture.capacity);expect(texture.estimatedBytes).toBeLessThanOrEqual(texture.budgetBytes);expect(texture.hits).toBeGreaterThan(0)
  await writeFile(info.outputPath('physical-motion.json'),JSON.stringify({revision,metrics:await metrics(),texture,perf:JSON.parse((await host.getAttribute('data-perf'))!)},null,2))
  expect(errors).toEqual([])
 })

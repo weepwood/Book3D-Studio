@@ -73,7 +73,7 @@ test('真实活动页重新抓取与取消',async({page},testInfo)=>{
 
 
 test('真实书芯边缘成组拾取与释放',async({page},testInfo)=>{
- await page.goto('/')
+ await page.goto('/?pick=1')
  const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
@@ -181,7 +181,7 @@ test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testI
      }
    })
  })
- await page.goto('/')
+ await page.goto('/?pick=1')
  await page.getByRole('button',{name:/内页/}).first().click()
  const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
  await page.getByRole('button',{name:/模型/}).click()

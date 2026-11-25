@@ -1,0 +1,486 @@
+{
+  "date": "2026-11-25",
+  "baseCommit": "d9008d5",
+  "hardware": "Apple M4 / Edge / Metal / 1280x800",
+  "pickOn": {
+    "label": "candidate",
+    "pickDiagnostic": true,
+    "boundaryFrameGap": {
+      "n": 22,
+      "p99": 1833.1999999999998,
+      "max": 1850
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+    "releaseMs": 400,
+    "activeFrames": 505,
+    "activeFrameGap": {
+      "p95": 16.700000000000728,
+      "p99": 16.800000000000182,
+      "over33ms": 0
+    },
+    "sameLeafProgressDelta": {
+      "p95": 0.046666666666666634,
+      "max": 0.06974030243261009
+    },
+    "gc": {
+      "events": 229,
+      "durationMs": 40.77,
+      "maxMs": 2.284
+    },
+    "heapUsedBytes": {
+      "before": 19848480,
+      "after": 20505372
+    },
+    "perf": {
+      "frames": 663,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999891,
+        "p95": 16.700000000000728,
+        "p99": 49.899999999999636
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 1.2000000476837158,
+        "p95": 2.3000001907348633,
+        "p99": 398.60000014305115
+      },
+      "cpuPick": {
+        "n": 2,
+        "p50": 0.20000004768371582,
+        "p95": 0.20000004768371582,
+        "p99": 0.20000004768371582
+      },
+      "inputToSubmit": {
+        "n": 28,
+        "p50": 1.7999999523162842,
+        "p95": 14.299999952316284,
+        "p99": 14.599999904632568
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 1.202208,
+        "p95": 1.481541,
+        "p99": 2.462208
+      },
+      "slowFrames": [
+        {
+          "duration": 67.09999990463257,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.20000004768371582,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.20000004768371582,
+            "render": 66.59999990463257,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0.09999990463256836
+          }
+        },
+        {
+          "duration": 41.200000047683716,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 2.6000001430511475,
+            "motion": 0.09999990463256836,
+            "geometry": 7.1000001430511475,
+            "camera": 0.09999990463256836,
+            "render": 31.299999952316284,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 432.89999985694885,
+          "state": "idle",
+          "phases": {
+            "start": 0.09999990463256836,
+            "opening": 0,
+            "motion": 0,
+            "geometry": 3.5,
+            "camera": 0.20000004768371582,
+            "render": 0.9000000953674316,
+            "picking": 428.19999980926514,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 501.2000000476837,
+          "state": "idle",
+          "phases": {
+            "start": 0.10000014305114746,
+            "opening": 0,
+            "motion": 0,
+            "geometry": 1.5999999046325684,
+            "camera": 0.09999990463256836,
+            "render": 1.1000001430511475,
+            "picking": 498.2999999523163,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 1839.7999999523163,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.10000014305114746,
+            "motion": 0,
+            "geometry": 0.5,
+            "camera": 0.09999990463256836,
+            "render": 0.2999999523162842,
+            "picking": 1838.7999999523163,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 1865.7999999523163,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0,
+            "motion": 0.09999990463256836,
+            "geometry": 0.7000000476837158,
+            "camera": 0.09999990463256836,
+            "render": 1.3000001907348633,
+            "picking": 1863.5,
+            "diagnostics": 0.09999990463256836,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 502.2000000476837,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0,
+            "motion": 0,
+            "geometry": 0.7999999523162842,
+            "camera": 0.10000014305114746,
+            "render": 0.8999998569488525,
+            "picking": 500.40000009536743,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 398.60000014305115,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0,
+            "motion": 0,
+            "geometry": 0.40000009536743164,
+            "camera": 0,
+            "render": 0.2999999523162842,
+            "picking": 397.7999999523163,
+            "diagnostics": 0,
+            "metrics": 0.10000014305114746
+          }
+        },
+        {
+          "duration": 382.5,
+          "state": "idle",
+          "phases": {
+            "start": 0.20000004768371582,
+            "opening": 0,
+            "motion": 0,
+            "geometry": 0.8999998569488525,
+            "camera": 0.10000014305114746,
+            "render": 1.0999999046325684,
+            "picking": 380.2000000476837,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 375.09999990463257,
+          "state": "idle",
+          "phases": {
+            "start": 0.09999990463256836,
+            "opening": 0,
+            "motion": 0.20000004768371582,
+            "geometry": 0.8999998569488525,
+            "camera": 0.10000014305114746,
+            "render": 1.0999999046325684,
+            "picking": 372.7000000476837,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 422.90000009536743,
+          "state": "idle",
+          "phases": {
+            "start": 0.10000014305114746,
+            "opening": 0,
+            "motion": 0,
+            "geometry": 1.5999999046325684,
+            "camera": 0.10000014305114746,
+            "render": 0.7999999523162842,
+            "picking": 420.2999999523163,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        }
+      ]
+    }
+  },
+  "pickOff": {
+    "label": "candidate",
+    "pickDiagnostic": false,
+    "boundaryFrameGap": {
+      "n": 21,
+      "p99": 16.799999999999272,
+      "max": 16.80000000000109
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+    "releaseMs": 404,
+    "activeFrames": 512,
+    "activeFrameGap": {
+      "p95": 16.700000000000728,
+      "p99": 16.800000000000182,
+      "over33ms": 0
+    },
+    "sameLeafProgressDelta": {
+      "p95": 0.046666666666666634,
+      "max": 0.07
+    },
+    "gc": {
+      "events": 22,
+      "durationMs": 32.89,
+      "maxMs": 4.514
+    },
+    "heapUsedBytes": {
+      "before": 18092112,
+      "after": 14751984
+    },
+    "perf": {
+      "frames": 670,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999891,
+        "p95": 16.800000000000182,
+        "p99": 50
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 1.6999998092651367,
+        "p95": 2.4000000953674316,
+        "p99": 3.299999952316284
+      },
+      "cpuPick": {
+        "n": 2,
+        "p50": 0.2999999523162842,
+        "p95": 0.2999999523162842,
+        "p99": 0.2999999523162842
+      },
+      "inputToSubmit": {
+        "n": 28,
+        "p50": 1.3000001907348633,
+        "p95": 11.799999952316284,
+        "p99": 12.400000095367432
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 1.269125,
+        "p95": 2.154833,
+        "p99": 2.48675
+      },
+      "slowFrames": [
+        {
+          "duration": 86.20000004768372,
+          "state": "idle",
+          "phases": {
+            "start": 0.09999990463256836,
+            "opening": 0.10000014305114746,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.20000004768371582,
+            "render": 85.59999990463257,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0.20000004768371582
+          }
+        }
+      ]
+    }
+  },
+  "handoff": {
+    "handoff": {
+      "samples": 4,
+      "maxMm": 1.1102230246251565e-14,
+      "lastMm": 0
+    },
+    "cache": {
+      "size": 9,
+      "capacity": 24,
+      "hits": 29,
+      "misses": 9,
+      "evictions": 0,
+      "estimatedBytes": 93749760,
+      "peakEstimatedBytes": 93749760,
+      "budgetBytes": 201326592
+    },
+    "perf": {
+      "frames": 386,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.699999999999818,
+        "p95": 16.799999999999272,
+        "p99": 16.800000000000182
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 0.6000001430511475,
+        "p95": 2.200000047683716,
+        "p99": 2.5999999046325684
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 4,
+        "p50": 13.799999952316284,
+        "p95": 14.399999856948853,
+        "p99": 14.399999856948853
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 0.811291,
+        "p95": 1.331833,
+        "p99": 1.7085
+      },
+      "slowFrames": [
+        {
+          "duration": 87.70000004768372,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.09999990463256836,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.3000001907348633,
+            "render": 87.19999980926514,
+            "picking": 0.10000014305114746,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 37,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 1,
+            "motion": 0.19999980926513672,
+            "geometry": 7,
+            "camera": 0.10000014305114746,
+            "render": 28.700000047683716,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        }
+      ]
+    }
+  },
+  "highPage": {
+    "revision": "1",
+    "metrics": {
+      "configuredDepth": 1,
+      "leftNominal": 0.25,
+      "rightNominal": 0.75,
+      "moving": 0,
+      "leaves": 1000,
+      "left": 0.2500000455641997,
+      "right": 0.7500000081961399,
+      "leftRoot": 0.13402606737666534,
+      "rightRoot": 0.402078202129996
+    },
+    "texture": {
+      "size": 19,
+      "capacity": 24,
+      "hits": 19,
+      "misses": 33,
+      "evictions": 14,
+      "estimatedBytes": 197916160,
+      "peakEstimatedBytes": 197916160,
+      "budgetBytes": 201326592
+    },
+    "perf": {
+      "frames": 385,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.699999999999818,
+        "p95": 16.799999999999272,
+        "p99": 33.33199999999988
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 2.3999998569488525,
+        "p95": 3.8999998569488525,
+        "p99": 5.299999952316284
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 3,
+        "p50": 15.5,
+        "p95": 15.5,
+        "p99": 15.5
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 1.152666,
+        "p95": 1.524458,
+        "p99": 2.517375
+      },
+      "slowFrames": [
+        {
+          "duration": 60.60000014305115,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.20000004768371582,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.20000004768371582,
+            "render": 60.09999990463257,
+            "picking": 0.10000014305114746,
+            "diagnostics": 0,
+            "metrics": 0
+          }
+        },
+        {
+          "duration": 45.10000014305115,
+          "state": "idle",
+          "phases": {
+            "start": 0.10000014305114746,
+            "opening": 3.5999999046325684,
+            "motion": 0.20000004768371582,
+            "geometry": 8.700000047683716,
+            "camera": 0.09999990463256836,
+            "render": 32.299999952316284,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0.10000014305114746
+          }
+        }
+      ]
+    }
+  }
+}

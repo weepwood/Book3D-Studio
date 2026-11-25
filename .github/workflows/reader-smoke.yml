@@ -30,6 +30,7 @@ on:
       - 'scripts/fixtures/**'
       - 'src/core/paperShading.ts'
       - 'src/core/textureWarm.ts'
+      - 'src/core/textureBudget.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
@@ -49,7 +50,7 @@ concurrency:
   group: reader-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  browser:
+  browser-motion:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -59,13 +60,44 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/reader.spec.ts browser-tests/touch-reader.spec.ts browser-tests/visual-defects.spec.ts browser-tests/viewport-runtime.spec.ts browser-tests/geometry-performance.spec.ts browser-tests/continuity.spec.ts browser-tests/motion-framing.spec.ts browser-tests/integrated-polish.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts
+      - run: npm run test:browser -- browser-tests/reader.spec.ts browser-tests/touch-reader.spec.ts browser-tests/visual-defects.spec.ts browser-tests/geometry-performance.spec.ts browser-tests/continuity.spec.ts browser-tests/motion-framing.spec.ts browser-tests/integrated-polish.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: reader-test-results
           path: test-results/
           if-no-files-found: ignore
+
+  browser-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser -- browser-tests/viewport-runtime.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-ui-test-results
+          path: test-results/
+          if-no-files-found: ignore
+
+  # Preserve the existing browser check as the aggregate of both shards.
+  browser:
+    runs-on: ubuntu-24.04
+    needs: [browser-motion, browser-ui]
+    if: always()
+    timeout-minutes: 2
+    steps:
+      - name: Require both reader browser shards
+        env:
+          MOTION: ${{ needs.browser-motion.result }}
+          UI: ${{ needs.browser-ui.result }}
+        run: test "$MOTION" = success && test "$UI" = success
 
   triangle-contact:
     runs-on: ubuntu-24.04
@@ -95,7 +127,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts
+      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts browser-tests/handoff-budget.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

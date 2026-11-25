@@ -18,7 +18,7 @@ async function run(root,label){
   browser=await chromium.launch({executablePath:process.env.BOOK3D_CHROMIUM_EXECUTABLE,args:process.env.BOOK3D_HARDWARE_GPU==='1'?[]:['--use-angle=swiftshader','--enable-unsafe-swiftshader']})
   const page=await browser.newPage({viewport:{width:1280,height:800}}),host=page.locator('.canvas-host')
   const errors=[];page.on('pageerror',e=>errors.push(e.message))
-  await page.goto(url+'/?perf=1');await host.locator('canvas').waitFor()
+  await page.goto(url+'/?perf=1'+(process.env.BOOK3D_BENCH_PICK==='1'?'&pick=1':''));await host.locator('canvas').waitFor()
   await page.getByRole('button',{name:'打开书籍',exact:true}).click()
   await page.waitForFunction(()=>document.querySelector('.canvas-host')?.dataset.pageReady==='true',{},{timeout:25000})
   const cdp=await page.context().newCDPSession(page)
@@ -28,10 +28,10 @@ async function run(root,label){
   cdp.on('Tracing.dataCollected',({value})=>{for(const e of value)if(['MinorGC','MajorGC'].includes(e.name)&&e.ph==='X'&&Number.isFinite(e.dur))gc.push({name:e.name,durationMs:e.dur/1000})})
   await cdp.send('Tracing.start',{categories:'devtools.timeline,v8',transferMode:'ReportEvents'})
   await page.evaluate(()=>{
-   const host=document.querySelector('.canvas-host'),p={gaps:[],progressDeltas:[],done:false,last:0,index:null,progress:0,active:false}
+   const host=document.querySelector('.canvas-host'),p={gaps:[],boundaryGaps:[],progressDeltas:[],done:false,last:0,index:null,progress:0,active:false}
    window.__bookMotionProbe=p
    const tick=now=>{if(p.done)return;const active=host.dataset.pageTurn==='active',index=host.dataset.pageIndex,progress=Number(host.dataset.pageProgress)
-    if(active&&p.active){p.gaps.push(now-p.last);if(index===p.index)p.progressDeltas.push(Math.abs(progress-p.progress))}
+    if(p.last&&(active||p.active)&&active!==p.active)p.boundaryGaps.push(now-p.last);if(active&&p.active){p.gaps.push(now-p.last);if(index===p.index)p.progressDeltas.push(Math.abs(progress-p.progress))}
     Object.assign(p,{last:now,index,progress,active});requestAnimationFrame(tick)}
    requestAnimationFrame(tick)
   })
@@ -50,7 +50,7 @@ async function run(root,label){
   const perf=JSON.parse(await host.getAttribute('data-perf'))
   const gaps=observed.gaps,progress=observed.progressDeltas
   if(errors.length)throw Error(errors.join('\n'))
-  return {label,renderer:await host.getAttribute('data-perf-renderer'),releaseMs,activeFrames:gaps.length,activeFrameGap:{p95:percentile(gaps,.95),p99:percentile(gaps,.99),over33ms:gaps.filter(x=>x>33.4).length},sameLeafProgressDelta:{p95:percentile(progress,.95),max:Math.max(0,...progress)},gc:{events:gc.length,durationMs:gc.reduce((s,e)=>s+e.durationMs,0),maxMs:Math.max(0,...gc.map(e=>e.durationMs))},heapUsedBytes:{before:before.JSHeapUsedSize,after:after.JSHeapUsedSize},perf}
+  return {label,pickDiagnostic:process.env.BOOK3D_BENCH_PICK==='1',boundaryFrameGap:{n:observed.boundaryGaps.length,p99:percentile(observed.boundaryGaps,.99),max:Math.max(0,...observed.boundaryGaps)},renderer:await host.getAttribute('data-perf-renderer'),releaseMs,activeFrames:gaps.length,activeFrameGap:{p95:percentile(gaps,.95),p99:percentile(gaps,.99),over33ms:gaps.filter(x=>x>33.4).length},sameLeafProgressDelta:{p95:percentile(progress,.95),max:Math.max(0,...progress)},gc:{events:gc.length,durationMs:gc.reduce((s,e)=>s+e.durationMs,0),maxMs:Math.max(0,...gc.map(e=>e.durationMs))},heapUsedBytes:{before:before.JSHeapUsedSize,after:after.JSHeapUsedSize},perf}
  }finally{await browser?.close();server.kill();await new Promise(r=>{if(server.exitCode!==null||server.signalCode!==null)r();else server.once('exit',r)})}
 }
 await mkdir(resolve(output,'..'),{recursive:true})
