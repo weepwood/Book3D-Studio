@@ -7,10 +7,11 @@ export const PAGE_DECODE_CONCURRENCY=2
 export function createPageDecodeQueue(decode:(url:string)=>Promise<DecodedPage>,limit=PAGE_DECODE_CONCURRENCY,budget=0){
  const jobs=new Map<string,Job>(),cache=new Map<string,DecodedPage>()
  let cacheBytes=0,peakCacheBytes=0,cacheHits=0,cacheEvictions=0,epoch=0
- let active=0,peakActive=0,requested=0,shared=0,started=0,failed=0,deliveryFailed=0,canceled=0,completed=0,decodeMs=0,peakDecodeMs=0,closed=false
+ let active=0,peakActive=0,requested=0,shared=0,started=0,failed=0,deliveryFailed=0,canceled=0,completed=0,decodeMs=0,peakDecodeMs=0,closed=false,backgroundPaused=false
  let timer:ReturnType<typeof setTimeout>|null=null
+ const eligible=(j:Job)=>!j.running&&j.listeners.size>0&&(!backgroundPaused||[...j.listeners].some(l=>l.visible()))
  const schedule=()=>{
-  if(closed||timer!==null||active>=limit||![...jobs.values()].some(j=>!j.running&&j.listeners.size))return
+  if(closed||timer!==null||active>=limit||![...jobs.values()].some(eligible))return
   timer=setTimeout(()=>{timer=null;pump()},0)
  }
  const run=async(job:Job)=>{
@@ -41,7 +42,7 @@ export function createPageDecodeQueue(decode:(url:string)=>Promise<DecodedPage>,
  }
  function pump(){
   while(!closed&&active<limit){
-   const pending=[...jobs.values()].filter(j=>!j.running&&j.listeners.size)
+   const pending=[...jobs.values()].filter(eligible)
    const job=pending.find(j=>[...j.listeners].some(l=>l.visible()))??pending[0]
    if(!job)break
    void run(job)
@@ -57,7 +58,7 @@ export function createPageDecodeQueue(decode:(url:string)=>Promise<DecodedPage>,
  }
  function clearCache(){epoch++;for(const page of cache.values())page.close?.();cache.clear();cacheBytes=0}
  function dispose(){closed=true;clearCache();if(timer!==null)clearTimeout(timer);timer=null;for(const j of jobs.values()){canceled+=j.listeners.size;j.listeners.clear()}jobs.clear()}
- return {request,dispose,clearCache,metrics:()=>({cacheBytes,peakCacheBytes,cacheHits,cacheEvictions,cacheBudget:budget,active,peakActive,queued:[...jobs.values()].filter(j=>!j.running).length,requested,shared,started,completed,failed,deliveryFailed,canceled,decodeMs,peakDecodeMs,limit})}
+ return {request,dispose,clearCache,notifyVisibility:schedule,pauseBackground:()=>{backgroundPaused=true},resumeBackground:()=>{backgroundPaused=false;schedule()},metrics:()=>({backgroundPaused,cacheBytes,peakCacheBytes,cacheHits,cacheEvictions,cacheBudget:budget,active,peakActive,queued:[...jobs.values()].filter(j=>!j.running).length,requested,shared,started,completed,failed,deliveryFailed,canceled,decodeMs,peakDecodeMs,limit})}
 }
 function retainedBitmap(bitmap:ImageBitmap,width:number,height:number):DecodedPage{
  return {source:bitmap,width,height,retainedBytes:bitmap.width*bitmap.height*4,close:()=>bitmap.close()}

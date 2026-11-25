@@ -87,7 +87,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/viewport-runtime.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts browser-tests/fixed-render.spec.ts browser-tests/profile-decode.spec.ts
+      - run: npm run test:browser -- browser-tests/viewport-runtime.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts browser-tests/fixed-render.spec.ts browser-tests/profile-decode.spec.ts browser-tests/first-frame-audit.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

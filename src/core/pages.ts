@@ -178,7 +178,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(const [key,entry] of cache){entry.texture.userData.visible=pinned.has(entry.texture);if(!entry.texture.userData.visible&&!key.startsWith(generation+':')){cache.delete(key);disposeTexture(entry.texture);evictions++}}
     const plan=textureEvictions(cache,pinned,capacity,PAGE_TEXTURE_BUDGET-reservedDecodeBytes())
     for(const key of plan.keys){const entry=cache.get(key)!;cache.delete(key);disposeTexture(entry.texture);evictions++}
-    estimatedBytes=plan.bytes+reservedDecodeBytes();peakEstimatedBytes=Math.max(peakEstimatedBytes,estimatedBytes)
+    estimatedBytes=plan.bytes+reservedDecodeBytes();peakEstimatedBytes=Math.max(peakEstimatedBytes,estimatedBytes);decoder.notifyVisibility()
   }
   function acquire(index:number,flip=false,prefetch=false){
     const key=faceKey(index,flip)
@@ -270,7 +270,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(let i=block?0:active.length;i<slots.length;i++){const s=slots[i];s.leaf.visible=false;unpin(s.front);unpin(s.back)}
     trim()
   }
-  function pauseBackground(){if(disposed||backgroundPaused)return;backgroundPaused=true;priorityPauses++;cancelPool();cancelPreload();cancelWarmHandle();preloadKey=''}
-  function resumeBackground(){if(disposed||!backgroundPaused)return;backgroundPaused=false;priorityResumes++;if(preloadPlan)preload(preloadPlan.index,preloadPlan.count,preloadPlan.direction);if(poolWanted)preparePool();scheduleWarm()}
+  function pauseBackground(){if(disposed||backgroundPaused)return;backgroundPaused=true;decoder.pauseBackground();priorityPauses++;cancelPool();cancelPreload();cancelWarmHandle();preloadKey=''}
+  function resumeBackground(){if(disposed||!backgroundPaused)return;backgroundPaused=false;decoder.resumeBackground();priorityResumes++;if(preloadPlan)preload(preloadPlan.index,preloadPlan.count,preloadPlan.direction);if(poolWanted)preparePool();scheduleWarm()}
   return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,pauseBackground,resumeBackground,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({decoderMode:bitmapDecoder?"bitmap":"image",priorityPauses,priorityResumes,backgroundPaused,sharedFaces,aliases:aliases.size,aliasHits,lastDirection,reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }

@@ -11,7 +11,7 @@ test('固定渲染档位、首帧优先与逐叶提交真实对照',async({brows
    const page=await context.newPage(),errors:string[]=[]
    page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/WebGLProgram|shader error/i.test(m.text()))errors.push(m.text())})
    await page.addInitScript(()=>localStorage.setItem('book3d.config',JSON.stringify({version:1,pageCount:80,pageIndex:10,opening:180,paperPhysics:'material',thicknessMode:'automatic',pageDuration:.85})))
-   await page.goto('/?perf=1&renderProfile='+profile)
+   await page.goto('/?perf=1&inputPriority=1&renderProfile='+profile)
    const host=page.locator('.canvas-host'),canvas=host.locator('canvas')
    await expect(host).toHaveAttribute('data-page-ready','true',{timeout:30000})
    const base=await canvas.evaluate((c:HTMLCanvasElement)=>({width:c.width,height:c.height,cssWidth:c.clientWidth,cssHeight:c.clientHeight}))

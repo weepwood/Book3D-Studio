@@ -44,3 +44,23 @@ it('reuses bounded resized bitmaps, evicts LRU and clears a generation',async()=
  q.clearCache();expect(close).toHaveBeenCalledTimes(3);expect(q.metrics().cacheBytes).toBe(0)
  await run('a');q.dispose();expect(close).toHaveBeenCalledTimes(4)
 })
+
+it('defers speculative decode starts while allowing visible work and resuming queued work',async()=>{
+ const order:string[]=[],q=createPageDecodeQueue(async url=>{order.push(url);return raster()},1)
+ q.pauseBackground();q.request('ahead',()=>{},()=>false);q.request('visible',()=>{},()=>true)
+ await vi.waitFor(()=>expect(q.metrics().completed).toBe(1))
+ expect(order).toEqual(['visible']);expect(q.metrics().queued).toBe(1)
+ q.resumeBackground();await vi.waitFor(()=>expect(q.metrics().completed).toBe(2))
+ expect(order).toEqual(['visible','ahead']);expect(q.metrics().backgroundPaused).toBe(false)
+ q.dispose()
+})
+
+it('wakes a previously speculative queued image when it becomes visible',async()=>{
+ let visible=false
+ const done=vi.fn(),q=createPageDecodeQueue(async()=>raster(),1)
+ q.pauseBackground();q.request('ahead',done,()=>visible)
+ expect(q.metrics().queued).toBe(1)
+ visible=true;q.notifyVisibility()
+ await vi.waitFor(()=>expect(done).toHaveBeenCalledOnce())
+ q.dispose()
+})
