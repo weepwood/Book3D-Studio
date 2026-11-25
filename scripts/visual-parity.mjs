@@ -7,7 +7,20 @@ const viewport={width:1280,height:900}
 const results=[]
 const captures=[]
 async function record(label,fn){try{await fn();results.push({label,status:'captured'})}catch(e){results.push({label,status:'unverified',error:String(e).slice(0,500)})}}
-async function shot(page,name){await page.screenshot({path:dir+'/'+name+'.png'});captures.push(name)}
+const captureAttempts=[]
+async function shot(page,name,retryLate=false){
+ const maxAttempts=retryLate?2:1
+ for(let attempt=1;attempt<=maxAttempts;attempt++){
+   const started=Date.now()
+   try{await page.screenshot({path:dir+'/'+name+'.png'});captures.push(name);captureAttempts.push({name,attempt,status:'captured',at:new Date().toISOString(),durationMs:Date.now()-started});return}
+   catch(e){
+     captureAttempts.push({name,attempt,status:'failed',at:new Date().toISOString(),durationMs:Date.now()-started,error:String(e).slice(0,500)})
+     if(attempt===maxAttempts||e?.name!=='TimeoutError')throw e
+     // Late stable spread only: never relabel an early animation frame.
+     await page.waitForTimeout(500)
+   }
+ }
+}
 const local=await browser.newPage({viewport})
 const localErrors=[];local.on('pageerror',e=>localErrors.push(e.message));local.on('console',m=>{if(m.type()==='error'&&/shader|WebGLProgram|GL_INVALID|VALIDATE_STATUS/i.test(m.text()))localErrors.push(m.text().slice(0,2000))})
 await record('local closed/open/turn',async()=>{
@@ -62,8 +75,8 @@ await record('Stripe Press open book',async()=>{
  await source.waitForTimeout(800)
  await shot(source,'reference-opening-early')
  await source.waitForTimeout(2700);await shot(source,'reference-after-open')
- await source.waitForTimeout(6500);await shot(source,'reference-open-late')
- await source.waitForTimeout(2500);await shot(source,'reference-open-late-check')
+ await source.waitForTimeout(6500);await shot(source,'reference-open-late',true)
+ await source.waitForTimeout(2500);await shot(source,'reference-open-late-check',true)
  // A Close book control only proves the reader was requested, not that
  // the rendered book has opened. Require the real spread control and a
  // changed page readout after activating a public pagination button.
@@ -89,7 +102,7 @@ await record('Stripe Press open book',async()=>{
 })
 await browser.close()
 await writeFile(dir+'/source-diagnostics.json',JSON.stringify(diagnostics,null,2))
-await writeFile(dir+'/report.json',JSON.stringify({viewport,results,captures,limitations:'Different books/assets; original camera interaction not locked. The fixed public Nomad Letters detail route and current book identity are asserted; the activated public control identity is recorded. Reference early/late frames and pagination proof are separate; human inspection must confirm an actually unfolded spread. These are evidence captures, not pixel-level parity.'},null,2))
+await writeFile(dir+'/report.json',JSON.stringify({viewport,results,captures,captureAttempts,limitations:'Different books/assets; original camera interaction not locked. The fixed public Nomad Letters detail route and current book identity are asserted; the activated public control identity is recorded. Reference early/late frames and pagination proof are separate; human inspection must confirm an actually unfolded spread. These are evidence captures, not pixel-level parity.'},null,2))
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;')
 await writeFile(dir+'/index.html','<!doctype html><meta charset=utf-8><title>Stripe Press 对照</title><style>body{font:15px system-ui;background:#eee;margin:24px}main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}img{width:100%;display:block}figure{margin:0;background:white;padding:8px}pre{white-space:pre-wrap}</style><h1>Book3D / Stripe Press 对照</h1><p>同视口证据截图，素材和相机尚未锁定；需要人工验收。</p><main>'+captures.map(n=>'<figure><figcaption>'+esc(n)+'</figcaption><img src="'+n+'.png"></figure>').join('')+'</main><pre>'+esc(JSON.stringify(results,null,2))+'</pre>')
-if(results.some(r=>r.status==='unverified'))process.exitCode=1
+if(results.some(r=>r.status==='unverified')){console.error(JSON.stringify({results,captureAttempts},null,2));process.exitCode=1}

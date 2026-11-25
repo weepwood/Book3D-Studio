@@ -14,9 +14,14 @@ on:
       - 'src/core/contactWorkerProtocol.ts'
       - 'src/core/clearance.ts'
       - 'src/core/renderProbe.ts'
+      - 'src/core/drawAudit.ts'
+      - 'src/core/stockDepthWarm.ts'
+      - 'src/core/renderBudget.ts'
+      - 'src/core/programWarm.ts'
       - 'src/editor/**'
       - 'src/core/workspace.ts'
       - 'src/core/schema.ts'
+      - 'src/core/physicalBook.ts'
       - 'src/style.css'
       - 'src/core/pages.ts'
       - 'src/core/pageGpu.ts'
@@ -29,9 +34,17 @@ on:
       - 'scripts/fixtures/**'
       - 'src/core/paperShading.ts'
       - 'src/core/textureWarm.ts'
+      - 'src/core/pageDecode.ts'
+      - 'src/core/textureBudget.ts'
+      - 'src/core/paperMaterial.ts'
+      - 'src/core/curveMetrics.ts'
+      - 'src/core/surfaceMetrics.ts'
+      - 'src/core/sectionSolver.ts'
+      - 'src/core/layerSolver.ts'
       - 'src/core/bindingGeometry.ts'
       - 'src/core/pressReference.ts'
       - 'src/core/pagePhysics.ts'
+      - 'src/core/turnInput.ts'
       - 'src/core/chunkMotion.ts'
       - 'src/core/book.ts'
       - 'src/core/geometry.ts'
@@ -48,7 +61,7 @@ concurrency:
   group: reader-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  browser:
+  browser-motion:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -58,13 +71,44 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/reader.spec.ts browser-tests/touch-reader.spec.ts browser-tests/visual-defects.spec.ts browser-tests/viewport-runtime.spec.ts browser-tests/geometry-performance.spec.ts browser-tests/continuity.spec.ts browser-tests/motion-framing.spec.ts browser-tests/integrated-polish.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts
+      - run: npm run test:browser -- browser-tests/reader.spec.ts browser-tests/touch-reader.spec.ts browser-tests/visual-defects.spec.ts browser-tests/geometry-performance.spec.ts browser-tests/continuity.spec.ts browser-tests/motion-framing.spec.ts browser-tests/integrated-polish.spec.ts browser-tests/turn-input.spec.ts browser-tests/interaction-audit.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: reader-test-results
           path: test-results/
           if-no-files-found: ignore
+
+  browser-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser -- browser-tests/viewport-runtime.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts browser-tests/fixed-render.spec.ts browser-tests/profile-decode.spec.ts browser-tests/first-frame-audit.spec.ts browser-tests/cover-lifecycle.spec.ts browser-tests/high-dpi-lifecycle.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-ui-test-results
+          path: test-results/
+          if-no-files-found: ignore
+
+  # Preserve the existing browser check as the aggregate of both shards.
+  browser:
+    runs-on: ubuntu-24.04
+    needs: [browser-motion, browser-ui]
+    if: always()
+    timeout-minutes: 2
+    steps:
+      - name: Require both reader browser shards
+        env:
+          MOTION: ${{ needs.browser-motion.result }}
+          UI: ${{ needs.browser-ui.result }}
+        run: test "$MOTION" = success && test "$UI" = success
 
   triangle-contact:
     runs-on: ubuntu-24.04
@@ -76,7 +120,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts browser-tests/swept-contact.spec.ts browser-tests/solid-contact.spec.ts browser-tests/contact-worker.spec.ts
+      - run: npm run test:browser -- browser-tests/triangle-correction.spec.ts browser-tests/swept-contact.spec.ts browser-tests/material-contact.spec.ts browser-tests/solid-contact.spec.ts browser-tests/contact-worker.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -94,7 +138,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/workspace.spec.ts
+      - run: npm run test:browser -- browser-tests/workspace.spec.ts browser-tests/physical-motion.spec.ts browser-tests/handoff-budget.spec.ts browser-tests/material-engine.spec.ts browser-tests/resource-stability.spec.ts browser-tests/chunk-endpoints.spec.ts browser-tests/texture-composite.spec.ts browser-tests/handoff-surface.spec.ts browser-tests/hd-texture.spec.ts browser-tests/shared-face.spec.ts browser-tests/shadow-cache.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,0 +1,748 @@
+{
+  "date": "2026-11-25",
+  "baseRevision": "f92348d",
+  "beforeArcProjection": {
+    "shaderMs": 3.3999998569488525,
+    "samples": [
+      {
+        "index": 51,
+        "cache": {
+          "size": 13,
+          "capacity": 24,
+          "hits": 13,
+          "misses": 13,
+          "evictions": 0,
+          "estimatedBytes": 135416320,
+          "peakEstimatedBytes": 135416320,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 200,
+          "stackPoseCount": 33,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 52,
+        "cache": {
+          "size": 16,
+          "capacity": 24,
+          "hits": 18,
+          "misses": 16,
+          "evictions": 0,
+          "estimatedBytes": 166666240,
+          "peakEstimatedBytes": 166666240,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 223,
+          "stackPoseCount": 35,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 53,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 23,
+          "misses": 19,
+          "evictions": 0,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 246,
+          "stackPoseCount": 37,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 60,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 28,
+          "misses": 24,
+          "evictions": 5,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 308,
+          "stackPoseCount": 39,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 31,
+          "misses": 29,
+          "evictions": 10,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 383,
+          "stackPoseCount": 41,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 241,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 34,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 406,
+          "stackPoseCount": 43,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 40,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 429,
+          "stackPoseCount": 45,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 100,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 47,
+          "misses": 37,
+          "evictions": 18,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 503,
+          "stackPoseCount": 47,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 99,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 52,
+          "misses": 40,
+          "evictions": 21,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 525,
+          "stackPoseCount": 49,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 500,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 55,
+          "misses": 45,
+          "evictions": 26,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 603,
+          "stackPoseCount": 51,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 501,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 58,
+          "misses": 48,
+          "evictions": 29,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 625,
+          "stackPoseCount": 53,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 499,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 70,
+          "misses": 51,
+          "evictions": 32,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 635,
+          "stackPoseCount": 56,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 800,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 73,
+          "misses": 56,
+          "evictions": 37,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 713,
+          "stackPoseCount": 58,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 801,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 75,
+          "misses": 58,
+          "evictions": 39,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 736,
+          "stackPoseCount": 60,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 799,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 88,
+          "misses": 62,
+          "evictions": 43,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 747,
+          "stackPoseCount": 63,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 50,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 91,
+          "misses": 67,
+          "evictions": 48,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 826,
+          "stackPoseCount": 65,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      }
+    ],
+    "curve": {
+      "samples": 744,
+      "maxRelativeLengthError": 0.059890997458979765,
+      "maxRootError": 0,
+      "maxCurvature": 88.0285136509194,
+      "maxEnergyPerWidth": 0.001320264015089497
+    },
+    "perf": {
+      "frames": 825,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999709,
+        "p95": 16.799999999999272,
+        "p99": 33.399999999999636
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 2,
+        "p95": 3.200000047683716,
+        "p99": 3.5
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 17,
+        "p50": 9.200000047683716,
+        "p95": 17.200000047683716,
+        "p99": 17.200000047683716
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 1.183999,
+        "p95": 3.097333,
+        "p99": 4.828583
+      },
+      "slowFrames": [
+        {
+          "duration": 73.29999995231628,
+          "state": "idle",
+          "phases": {
+            "start": 0,
+            "opening": 0.09999990463256836,
+            "motion": 0,
+            "geometry": 0.09999990463256836,
+            "camera": 0.10000014305114746,
+            "render": 72.89999985694885,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0.10000014305114746
+          }
+        }
+      ]
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  },
+  "afterArcProjection": {
+    "shaderMs": 3.700000047683716,
+    "samples": [
+      {
+        "index": 51,
+        "cache": {
+          "size": 13,
+          "capacity": 24,
+          "hits": 13,
+          "misses": 13,
+          "evictions": 0,
+          "estimatedBytes": 135416320,
+          "peakEstimatedBytes": 135416320,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 198,
+          "stackPoseCount": 32,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 52,
+        "cache": {
+          "size": 16,
+          "capacity": 24,
+          "hits": 18,
+          "misses": 16,
+          "evictions": 0,
+          "estimatedBytes": 166666240,
+          "peakEstimatedBytes": 166666240,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 221,
+          "stackPoseCount": 34,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 53,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 23,
+          "misses": 19,
+          "evictions": 0,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 244,
+          "stackPoseCount": 36,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 60,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 28,
+          "misses": 24,
+          "evictions": 5,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 306,
+          "stackPoseCount": 38,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 31,
+          "misses": 29,
+          "evictions": 10,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 382,
+          "stackPoseCount": 40,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 241,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 34,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 405,
+          "stackPoseCount": 42,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 240,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 40,
+          "misses": 32,
+          "evictions": 13,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 427,
+          "stackPoseCount": 44,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 100,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 47,
+          "misses": 37,
+          "evictions": 18,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 501,
+          "stackPoseCount": 46,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 99,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 52,
+          "misses": 40,
+          "evictions": 21,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 524,
+          "stackPoseCount": 48,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 500,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 55,
+          "misses": 45,
+          "evictions": 26,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 602,
+          "stackPoseCount": 50,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 501,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 58,
+          "misses": 48,
+          "evictions": 29,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 624,
+          "stackPoseCount": 52,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 499,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 70,
+          "misses": 51,
+          "evictions": 32,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 634,
+          "stackPoseCount": 55,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 800,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 73,
+          "misses": 56,
+          "evictions": 37,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 711,
+          "stackPoseCount": 57,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 801,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 76,
+          "misses": 59,
+          "evictions": 40,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 734,
+          "stackPoseCount": 59,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 799,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 88,
+          "misses": 62,
+          "evictions": 43,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 744,
+          "stackPoseCount": 62,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      },
+      {
+        "index": 50,
+        "cache": {
+          "size": 19,
+          "capacity": 24,
+          "hits": 91,
+          "misses": 67,
+          "evictions": 48,
+          "estimatedBytes": 197916160,
+          "peakEstimatedBytes": 197916160,
+          "budgetBytes": 201326592
+        },
+        "geometry": {
+          "refreshCount": 823,
+          "stackPoseCount": 64,
+          "chainCacheSize": 128,
+          "dropMs": 700
+        }
+      }
+    ],
+    "curve": {
+      "samples": 740,
+      "maxRelativeLengthError": 3.4805442242418294e-05,
+      "maxRootError": 0,
+      "maxCurvature": 79.59457740152538,
+      "maxEnergyPerWidth": 0.0013201090221704075
+    },
+    "perf": {
+      "frames": 823,
+      "frameGap": {
+        "n": 300,
+        "p50": 16.69999999999891,
+        "p95": 16.799999999999272,
+        "p99": 183.32600000000093
+      },
+      "cpuFrame": {
+        "n": 300,
+        "p50": 2.0999999046325684,
+        "p95": 3.299999952316284,
+        "p99": 3.8000001907348633
+      },
+      "cpuPick": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "inputToSubmit": {
+        "n": 17,
+        "p50": 10,
+        "p95": 14.700000047683716,
+        "p99": 14.700000047683716
+      },
+      "gpuRender": {
+        "n": 300,
+        "p50": 1.196375,
+        "p95": 1.57525,
+        "p99": 2.199624
+      },
+      "slowFrames": [
+        {
+          "duration": 83.79999995231628,
+          "state": "idle",
+          "phases": {
+            "start": 0.10000014305114746,
+            "opening": 0.09999990463256836,
+            "motion": 0,
+            "geometry": 0,
+            "camera": 0.20000004768371582,
+            "render": 83.20000004768372,
+            "picking": 0,
+            "diagnostics": 0,
+            "metrics": 0.09999990463256836
+          }
+        }
+      ]
+    },
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  },
+  "linearSweptDiagnosticBeforeProjection": {
+    "frames": 23,
+    "pairs": 105,
+    "tested": 1728,
+    "hits": 77,
+    "uncertain": 251,
+    "incomplete": 27,
+    "support": 400,
+    "touch": 306
+  }
+}

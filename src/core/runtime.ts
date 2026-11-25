@@ -9,15 +9,114 @@ import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,r
 import type {BookConfig} from './schema'
 import {READ_ANGLE,leafCount,easeTurn,clamp01,nextLeaf} from './pages'
 import {newChunkMotion,regrabChunkMotion,stepChunk,chunkCanCommit} from './chunkMotion'
-import {newTurn,stepTurn,releaseCommit,followDrag,followRender,stepManualRelease,type TurnState} from './pagePhysics'
+import {turnAtEndpoint,newTurn,stepTurn,followDrag,followRender,MotionClock,trackDrag,type TurnState} from './pagePhysics'
+import {physicalBook} from './physicalBook'
+import {paperMaterial} from './paperMaterial'
 import {curlTarget} from './pageChain'
 import {referenceDragProgress} from './pressReference'
-import {desiredBatch,orderedProgress,openingLeaves,OPENING_DROP_MS,activeSpan} from './pageWindow'
+import {TurnInput,releaseGesture,gestureIntent,sampleDragVelocity} from './turnInput'
+import {desiredBatch,orderedProgress,openingLeaves,OPENING_DROP_MS,STACK_SETTLE_MS,activeSpan} from './pageWindow'
 import {RenderProbe} from './renderProbe'
-import {PRESS_SCENE,coverProgress,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
+import {RenderBudget,renderProfileLevel,readRenderProfile,type RenderProfile} from './renderBudget'
+import {observePrograms} from './programWarm'
+import {DrawAudit} from './drawAudit'
+import {StockDepthWarm} from './stockDepthWarm'
+import {PRESS_SCENE,coverProgress,presentationStep,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
+const SETTLED_DROP=PRESS_SCENE.openDelayMs+STACK_SETTLE_MS
 export class BookRuntime {
   private renderer:T.WebGLRenderer
   private warmedTextures=0
+  private motionClock=new MotionClock()
+  private geometryRevision=1
+  // Opt-in experiment until device measurements establish a safe default.
+  private shaderWarmEnabled=new URLSearchParams(location.search).get('prewarm')==='1'
+  private renderBudget=new RenderBudget()
+  private fixedProfile=renderProfileLevel(readRenderProfile())
+  private profilePending=false
+  private adaptiveRendering=this.fixedProfile===0&&new URLSearchParams(location.search).get('renderBudget')==='1'
+  // Opt-in: paired hardware/software evidence did not show a first-motion benefit.
+  private inputPriority=new URLSearchParams(location.search).get('inputPriority')==='1'
+  private backgroundDeferred=false
+  private warmDrawEnabled=new URLSearchParams(location.search).get('warmDraw')==='1'
+  private shadowCacheEnabled=new URLSearchParams(location.search).get('shadowCache')!=='0'
+  private shadowDirty=true
+  private shadowRevision=-1
+  private shadowPasses=0
+  private shadowReuses=0
+  private resolutionQuery:MediaQueryList|null=null
+  private appliedBudget=0
+  private fullShadowSize=2048
+  private warmDrawTarget:T.WebGLRenderTarget|null=null
+  private cancelProgramProbe:(()=>void)|null=null
+  private stockDepthWarm=new StockDepthWarm()
+  private stockDepthEnabled=new URLSearchParams(location.search).get('stockDepthWarm')==='1'
+  private drawAudit:DrawAudit|null=null
+  private matchedDepthWarm=new URLSearchParams(location.search).get('depthWarm')!=='0'
+  private readingWarmDone=false
+  private readingWarmHandle:number|null=null
+  private shaderWarmHandle:number|null=null
+  private cancelShaderWarm(){this.cancelProgramProbe?.();this.cancelProgramProbe=null;if(this.readingWarmHandle!==null){window.cancelIdleCallback(this.readingWarmHandle);this.readingWarmHandle=null}if(this.shaderWarmHandle!==null){window.cancelIdleCallback(this.shaderWarmHandle);this.shaderWarmHandle=null}}
+  private scheduleShaderWarm(){
+    if(!this.shaderWarmEnabled||typeof window.requestIdleCallback!=='function'||this.disposed||this.contextLost)return
+    this.cancelShaderWarm()
+    const book=this.book
+    this.host.dataset.shaderWarm='pending'
+    this.shaderWarmHandle=window.requestIdleCallback(deadline=>{
+      this.shaderWarmHandle=null
+      if(this.disposed||this.contextLost||this.book!==book||this.turn||this.coverMotion||this.config.opening>=READ_ANGLE){this.host.dataset.shaderWarm='skipped';return}
+      if(deadline.timeRemaining()<8){this.scheduleShaderWarm();return}
+      const start=performance.now()
+      try{book.prepareShaders();this.renderer.compile(this.scene,this.camera);this.host.dataset.shaderWarm='submitted';this.host.dataset.shaderWarmMs=String(performance.now()-start)}catch{this.host.dataset.shaderWarm='failed'}
+    })
+  }
+  private scheduleReadingWarm(){
+    if(this.readingWarmDone||this.readingWarmHandle!==null||this.disposed||this.contextLost||typeof window.requestIdleCallback!=='function')return
+    const book=this.book
+    this.readingWarmHandle=window.requestIdleCallback(deadline=>{
+      this.readingWarmHandle=null
+      if(this.disposed||this.contextLost||this.book!==book||this.turn||this.coverMotion||this.config.opening<READ_ANGLE||this.openingActive)return
+      if(deadline.timeRemaining()<8){this.scheduleReadingWarm();return}
+      const start=performance.now()
+      try{
+        const representative=book.prepareShaders()
+        this.renderer.compile(representative.leaf,this.camera,this.scene)
+        // Borrow geometry/material, not a second visible object. The actual
+        // shadow draw may still instantiate a driver-specific variant.
+        const depth=representative.gpu.depth
+        if(this.matchedDepthWarm&&this.light.shadow.map){
+          // Match r174 PCF depth side, map and linear output target. Compile
+          // only; the actual visible shadow pass still draws every leaf.
+          const previous=this.renderer.getRenderTarget(),side=depth.side,map=depth.map
+          try{
+            depth.side=T.BackSide;depth.map=representative.front.map
+            this.renderer.setRenderTarget(this.light.shadow.map)
+            this.renderer.compile(new T.Mesh(representative.fm.geometry,depth),this.light.shadow.camera,this.scene)
+          }finally{this.renderer.setRenderTarget(previous);depth.side=side;depth.map=map}
+          this.host.dataset.depthWarm='matched-submitted'
+        }else{this.renderer.compile(new T.Mesh(representative.fm.geometry,depth),this.camera,this.scene);this.host.dataset.depthWarm='legacy-submitted'}
+        if(this.stockDepthEnabled){const n=this.stockDepthWarm.prepare(this.renderer,this.book.root,this.scene,this.light.shadow);this.host.dataset.stockDepthWarm=String(n)}
+        this.readingWarmDone=true;this.host.dataset.readingWarm='submitted';this.host.dataset.readingWarmMs=String(performance.now()-start)
+        if(this.warmDrawEnabled){
+          // Actual shadow/material draw, but an offscreen target has its own
+          // output-color/tone-mapping variant. Never claim full screen readiness.
+          const target=this.warmDrawTarget??=new T.WebGLRenderTarget(64,64)
+          const oldTarget=this.renderer.getRenderTarget(),visible=representative.leaf.visible
+          const oldCast=representative.fm.castShadow
+          try{
+            representative.leaf.visible=true;representative.fm.castShadow=true
+            this.renderer.setRenderTarget(target);this.renderer.render(this.scene,this.camera)
+            this.host.dataset.readingWarm='offscreen-drawn'
+            this.host.dataset.readingWarmDrawMs=String(performance.now()-start)
+          }finally{representative.leaf.visible=visible;representative.fm.castShadow=oldCast;this.renderer.setRenderTarget(oldTarget);this.light.shadow.needsUpdate=true;this.shadowDirty=true;target.dispose();this.warmDrawTarget=null}
+        }
+        if(this.perf){
+          this.cancelProgramProbe?.()
+          const programs=(this.renderer.info.programs??[]).map(p=>(p as unknown as {program:WebGLProgram}).program).filter(Boolean)
+          this.cancelProgramProbe=observePrograms(this.renderer.getContext() as WebGL2RenderingContext,programs,state=>{this.host.dataset.programWarm=state})
+        }
+      }catch{this.readingWarmDone=true;this.host.dataset.readingWarm='failed'}
+    })
+  }
   private warmTexture=createTextureWarmer<T.Texture>(texture=>{this.renderer.initTexture(texture);this.warmedTextures++})
   private scene=new T.Scene()
   private camera=new T.PerspectiveCamera(35,1,.1,100)
@@ -61,6 +160,7 @@ export class BookRuntime {
   private orbitMoving=false
   private contextLost=false
   private perf:RenderProbe|null=null
+  private startupProbe:{started:number;rendererMs:number;environmentMs:number;modelMs:number;setupMs:number}|null=null
   private meshProbeMode=new URLSearchParams(location.search).get('meshCollision')
   private meshProbeEnabled=this.meshProbeMode==='1'||this.meshProbeMode==='2'
   private meshProbeAt=-Infinity
@@ -68,6 +168,8 @@ export class BookRuntime {
   private contactWorker:ContactWorkerClient|null=null
   private meshProbeTotal={frames:0,segments:0,hits:0,byMesh:{} as Record<string,number>,byPhase:{} as Record<string,number>,examples:[] as unknown[]}
   private frameProbeEnabled=new URLSearchParams(location.search).get('frame')==='1'
+  private curveProbeEnabled=new URLSearchParams(location.search).get('curve')==='1'
+  private surfaceProbeEnabled=new URLSearchParams(location.search).get('surface')==='1'
   private frameOverflow=0
   private frameSamples=0
   private collisionEnabled=new URLSearchParams(location.search).get('collision')==='1'
@@ -85,6 +187,12 @@ export class BookRuntime {
   private touchStart:{x:number;y:number;time:number;view:ReadingView;lastX:number;velocityX:number;direction?:1|-1;progress?:number;distance?:number}|null=null
   private touchPinch:{x:number;y:number;distance:number;view:ReadingView}|null=null
   private cameraPan:{id:number;x:number;y:number;start:ReadingView}|null=null
+  private handoffProbeEnabled=new URLSearchParams(location.search).get('handoff')==='1'
+  private handoffPrevious:{index:number;direction:1|-1;points:T.Vector3[]}|null=null
+  private chunkHandoffPrevious:{index:number;direction:1|-1;span:number;goal:0|1;points:T.Vector3[]}|null=null
+  private chunkHandoffStats={commits:0,cancels:0,maxMm:0,lastMm:0,invalid:0}
+  private handoffStats={samples:0,maxMm:0,lastMm:0}
+  private groupProbeEnabled=import.meta.env.DEV&&new URLSearchParams(location.search).get('pick')==='1'
   private groupProbeKey=''
   private groupProbe:string=''
   private largeGroupProbe:string=''
@@ -93,6 +201,17 @@ export class BookRuntime {
   private resize:ResizeObserver
   private frame=0
   private drawing=false
+  private input=new TurnInput()
+  private admissionAt=-Infinity
+  private firstCommandAt:number|null=null
+  private firstMotionSamples:number[]=[]
+  private firstCommandContext:Record<string,unknown>|null=null
+  private firstCommandFrames:unknown[]=[]
+  private firstCommandFrameCount=0
+  private firstMotionTrace:unknown[]=[]
+  private dragIntent=false
+  private dragVelocity=0
+  private grabTarget=0
   private followers:TurnState[]=[]
   private hovered=false
   private peakActive=0
@@ -108,10 +227,14 @@ export class BookRuntime {
   private config:BookConfig
   private disposed=false
   private reduced=window.matchMedia('(prefers-reduced-motion: reduce)')
-  constructor(private host:HTMLElement,c:BookConfig,private onPageIndex?:(index:number)=>void,private onContextStatus?:(status:'lost'|'restored')=>void){
-    this.config={...c};this.open=c.opening>=READ_ANGLE?180:c.opening;this.index=nextLeaf(0,c.pageIndex,leafCount(c))
+  constructor(private host:HTMLElement,c:BookConfig,private onPageIndex?:(index:number)=>void,private onContextStatus?:(status:'lost'|'restored')=>void,profile?:RenderProfile){
+    if(profile){this.fixedProfile=renderProfileLevel(profile);if(this.fixedProfile!==0)this.adaptiveRendering=false}
+    const startup=performance.now();let phase=startup
+    this.config={...c};this.resetHandoffProbes(true);delete this.host.dataset.surfaceQuality;this.open=c.opening>=READ_ANGLE?180:c.opening;this.index=nextLeaf(0,c.pageIndex,leafCount(c))
     this.renderer=new T.WebGLRenderer({antialias:true,alpha:true})
+    const rendererMs=performance.now()-phase;phase=performance.now()
     if(new URLSearchParams(location.search).get('perf')==='1')this.perf=new RenderProbe(this.renderer.getContext() as WebGL2RenderingContext,host)
+    if(this.perf&&new URLSearchParams(location.search).get('drawAudit')==='1')this.drawAudit=new DrawAudit(this.renderer)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=T.PCFShadowMap
     this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.outputColorSpace=T.SRGBColorSpace
@@ -122,17 +245,19 @@ export class BookRuntime {
     const pmrem=new T.PMREMGenerator(this.renderer), room=new RoomEnvironment()
     this.environment=pmrem.fromScene(room,.04);this.scene.environment=this.environment.texture
     room.dispose();pmrem.dispose()
+    const environmentMs=performance.now()-phase
     this.camera.position.set(3,2,5)
     this.controls=new OrbitControls(this.camera,this.renderer.domElement)
     this.controls.enablePan=true;this.controls.minDistance=2;this.controls.maxDistance=15;this.controls.enableDamping=true;this.controls.dampingFactor=.12;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.zoomToCursor=true
     this.controls.addEventListener('change',this.invalidate);this.controls.addEventListener('start',this.cancelOrbitTransition);this.controls.addEventListener('start',this.cancelModeTransition)
     this.light.position.set(-3,5,5);this.light.castShadow=true
-    const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.light.shadow.mapSize.set(size,size)
+    const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.fullShadowSize=size;this.light.shadow.mapSize.set(size,size);this.applyRenderBudget(this.fixedProfile);this.host.dataset.renderProfile=String(this.fixedProfile);this.host.dataset.renderProfilePending='false'
     Object.assign(this.light.shadow.camera,{left:-5,right:5,top:5,bottom:-5,far:20})
     this.scene.add(this.light,this.fill,this.ambient)
     this.floor=new T.Mesh(new T.PlaneGeometry(30,30),new T.ShadowMaterial({opacity:.20}))
     this.floor.rotation.x=-Math.PI/2;this.floor.receiveShadow=true;this.scene.add(this.floor)
-    this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setReading(this.index,[]);this.scene.add(this.book.root)
+    phase=performance.now();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setReading(this.index,[]);this.scene.add(this.book.root)
+    const modelMs=performance.now()-phase
     this.resize=new ResizeObserver(this.onResize);this.resize.observe(host)
     this.renderer.domElement.addEventListener('pointermove',this.hover)
     this.renderer.domElement.addEventListener('pointerleave',this.leave)
@@ -142,41 +267,80 @@ export class BookRuntime {
     this.host.addEventListener('pointerup',this.readPanEnd,true)
     this.host.addEventListener('pointercancel',this.readPanEnd,true)
     this.host.addEventListener('lostpointercapture',this.readPanEnd,true)
-    this.apply(c);this.onResize();this.fit()
+    this.apply(c);this.watchResolution();window.addEventListener('resize',this.onResize);this.onResize();this.fit();this.scheduleShaderWarm()
+    if(this.perf)this.startupProbe={started:startup,rendererMs,environmentMs,modelMs,setupMs:performance.now()-startup}
   }
   cancelInteraction(){
     this.cancelModeTransition();
     const index=this.endPageDrag(false);this.clearPageHover();this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
     if(this.readingBounds)this.readingTarget=clampReadingView(this.readingView,this.readingBounds);this.invalidate();return index
   }
-  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
+  private resetHandoffProbes(clearStats=false){
+    this.handoffPrevious=null;this.chunkHandoffPrevious=null
+    if(clearStats){this.handoffStats={samples:0,maxMm:0,lastMm:0};this.chunkHandoffStats={commits:0,cancels:0,maxMm:0,lastMm:0,invalid:0};delete this.host.dataset.handoff;delete this.host.dataset.chunkHandoffQuality}
+  }
+  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.stockDepthWarm.dispose();this.backgroundDeferred=false;this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.cancelShaderWarm();this.book.suspendTextureWork();this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
-  private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
+  setRenderProfile(profile:RenderProfile){
+    if(this.disposed||this.contextLost)return
+    this.fixedProfile=renderProfileLevel(profile);this.adaptiveRendering=false;this.renderBudget.reset()
+    this.profilePending=this.appliedBudget!==this.fixedProfile
+    this.host.dataset.renderProfile=String(this.fixedProfile)
+    this.host.dataset.renderProfilePending=String(this.profilePending)
+    this.invalidate()
+  }
+  private applyRenderBudget(level:number){
+    if(this.appliedBudget===level)return
+    this.appliedBudget=level;this.shadowDirty=true
+    const ratio=Math.min(window.devicePixelRatio,2)*[1,.75,.5][level],size=Math.min(this.fullShadowSize,[this.fullShadowSize,1024,512][level])
+    this.renderer.setPixelRatio(ratio)
+    this.light.shadow.mapSize.set(size,size);this.light.shadow.map?.setSize(size,size);this.light.shadow.needsUpdate=true
+    this.host.dataset.renderBudget=JSON.stringify({level,ratio,shadowSize:size})
+  }
+  private watchResolution=()=>{
+    this.resolutionQuery?.removeEventListener('change',this.onResolutionChange)
+    this.resolutionQuery=window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    this.resolutionQuery.addEventListener('change',this.onResolutionChange)
+  }
+  private onResolutionChange=()=>{
+    if(this.disposed)return
+    this.watchResolution()
+    this.onResize()
+  }
+  private syncPreviewRatio(){
+    const ratio=Math.min(window.devicePixelRatio,2)*[1,.75,.5][this.appliedBudget]
+    if(this.renderer.getPixelRatio()!==ratio){
+      this.renderer.setPixelRatio(ratio)
+      this.host.dataset.renderBudget=JSON.stringify({level:this.appliedBudget,ratio,shadowSize:this.light.shadow.mapSize.x})
+    }
+  }
+  private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h||this.disposed||this.contextLost)return;this.syncPreviewRatio();this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
   private leave=()=>{this.clearPageHover();if(this.config.opening>=READ_ANGLE)return;this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch),T.MathUtils.degToRad(this.config.yaw),0);this.invalidate()}
-  invalidate=()=>{if(!this.disposed&&!this.contextLost&&!this.frame&&!this.drawing){this.last=performance.now();this.frame=requestAnimationFrame(this.draw)}}
+  invalidate=()=>{if(!this.disposed&&!this.contextLost&&!this.frame&&!this.drawing){this.last=performance.now();this.motionClock.reset();this.frame=requestAnimationFrame(this.draw)}}
   private draw=(now:number)=>{
-    this.frame=0;if(this.disposed||this.contextLost)return;this.drawing=true
-    this.perf?.start(now)
+    this.frame=0;if(this.disposed||this.contextLost)return;this.drawing=true;this.syncPreviewRatio()
+    this.perf?.start(now);this.perf?.phase('start')
     const openingTarget=this.config.opening>=READ_ANGLE?180:this.config.opening
     this.orbitMoving=this.controls.enabled&&this.controls.update()
-    const dt=Math.min(.25,Math.max(0,(now-this.last)/1000));this.last=now
+    const elapsed=Math.max(0,(now-this.last)/1000),dt=Math.min(.05,elapsed),cameraDt=presentationStep(elapsed);this.last=now
+    const motionDt=this.input.active&&!this.dragging&&this.turn&&!this.turn.chunkMotion?this.motionClock.advanceInteractive(elapsed):this.motionClock.advance(dt)
     if(this.orbitTransition){const a=this.orbitTransition;a.elapsed+=dt;const t=Math.min(1,a.elapsed/.28),e=t*t*(3-2*t),q=new T.Quaternion().setFromUnitVectors(a.from.clone().normalize(),a.to.clone().normalize());const dir=a.from.clone().normalize().applyQuaternion(new T.Quaternion().slerp(q,e));this.camera.position.copy(this.controls.target).addScaledVector(dir,T.MathUtils.lerp(a.from.length(),a.to.length(),e));this.controls.update();if(t===1)this.cancelOrbitTransition()}
     if(this.coverMotion&&this.coverMotion.to!==openingTarget&&Math.abs(this.open-openingTarget)<=.0001)this.coverMotion=null
     if(this.coverMotion?.to!==openingTarget&&Math.abs(this.open-openingTarget)>.0001){this.coverMotion={from:this.open,to:openingTarget,elapsed:0};if(openingTarget===180){this.dropElapsed=0;this.openingActive=true}}
-    if(this.reduced.matches){this.open=openingTarget;this.coverMotion=null;this.dropElapsed=2000;this.openingActive=false}else if(this.coverMotion){this.coverMotion.elapsed+=dt*1000;const a=coverProgress(this.coverMotion.from,this.coverMotion.to,this.coverMotion.elapsed);this.open=a.angle;if(a.done)this.coverMotion=null}
-    if(openingTarget===180){if(this.open>=179.5)this.dropElapsed=Math.min(2000,this.dropElapsed+dt*1000)}else {this.dropElapsed=2000;this.openingActive=false}
+    if(this.reduced.matches){this.open=openingTarget;this.coverMotion=null;this.dropElapsed=2000;this.openingActive=false}else if(this.coverMotion){this.coverMotion.elapsed+=cameraDt*1000;const a=coverProgress(this.coverMotion.from,this.coverMotion.to,this.coverMotion.elapsed);this.open=a.angle;if(a.done)this.coverMotion=null}
+    if(openingTarget===180){if(this.open>=179.5)this.dropElapsed=Math.min(SETTLED_DROP,this.dropElapsed+cameraDt*1000)}else {this.dropElapsed=2000;this.openingActive=false}
     this.book.setOpening(this.open>=179.5&&openingTarget===180?180:this.open);this.book.setDrop(Math.max(0,this.dropElapsed-PRESS_SCENE.openDelayMs));this.applyLight(this.open/180)
-    const target=nextLeaf(0,this.config.pageIndex,leafCount(this.config))
+    this.perf?.phase('opening');const target=nextLeaf(0,this.config.pageIndex,leafCount(this.config))
     const drop=this.openingActive&&this.open>=179.5?openingLeaves(this.index,leafCount(this.config),Math.max(0,this.dropElapsed-PRESS_SCENE.openDelayMs)):[]
     if(this.openingActive&&this.dropElapsed>=PRESS_SCENE.openDelayMs+OPENING_DROP_MS)this.openingActive=false
     const ready=this.open>=179.5&&!this.openingActive
     if(this.config.opening<READ_ANGLE||this.reduced.matches){this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=target}
     else if(ready){
-      if(this.turn?.preview&&this.index!==target){const d=target>this.index?1:-1;if(this.turn.direction===d)this.turn.preview=false;else this.turn=null;this.hovered=false}
-      if(!this.turn&&this.index!==target){this.turn=newTurn(target>this.index?1:-1);const n=Math.abs(target-this.index);if(n>6){this.turn.span=n;this.turn.chunkMotion=newChunkMotion(false)}}
+      if(this.turn?.preview&&this.index!==target){const d=target>this.index?1:-1;if(this.turn.direction===d){this.turn.preview=false;this.admissionAt=now;}else this.turn=null;this.hovered=false}
+      if(!this.turn&&this.index!==target){this.turn=newTurn(target>this.index?1:-1);const n=Math.abs(target-this.index);if(n>6&&!this.input.active){this.turn.span=n;this.turn.chunkMotion=newChunkMotion(false)}this.admissionAt=now}
       if(this.turn){
-        const t=this.turn,commit=target!==this.index&&Math.sign(target-this.index)===t.direction
+        const t=this.turn,material=paperMaterial(this.config),commit=target!==this.index&&Math.sign(target-this.index)===t.direction
         if(t.preview){
           const aim=this.hovered?curlTarget('hover',0,t.grabU,this.config.pageCorner*this.config.pageHover):0
           t.curlAmount+=(aim-t.curlAmount)*(1-Math.pow(this.hovered?.94:.95,dt*60))
@@ -184,24 +348,38 @@ export class BookRuntime {
         }else if(t.span&&t.span>1){
           const m=t.chunkMotion??(t.chunkMotion=newChunkMotion(!!t.chunkGesture,t.progress))
           const goal=(this.releaseGoal??(commit&&Math.abs(target-this.index)>=(t.span??1)?1:0)) as 0|1
-          stepChunk(m,t.span,dt,this.book.prepareChunk(this.index,t.direction,t.span),this.dragging,t.dragTarget,goal)
+          stepChunk(m,t.span,motionDt,this.book.prepareChunk(this.index,t.direction,t.span),this.dragging,t.dragTarget,goal,material.response,material.damping,this.config.paperPhysics==='material')
           t.progress=m.progress;t.renderProgress=m.progress
           if(chunkCanCommit(m,t.renderProgress)){if(m.goal===1)this.index=nextLeaf(this.index,t.direction*t.span,leafCount(this.config));this.turn=null;this.followers=[];this.releaseGoal=null;this.dragging=false;this.regrab=false}
         }else if(this.dragging){
-          const prev=t.progress;if(this.regrab&&this.brakeElapsed<PRESS_SCENE.brakeMs){this.brakeElapsed+=dt*1000;const k=brakeRetention(this.brakeElapsed);t.velocity*=Math.pow(1-k.damping,dt*60);const drift=clamp01(prev+t.velocity*dt*k.drive);t.progress=this.brakeElapsed<PRESS_SCENE.brakeLockMs&&Math.abs(t.dragTarget-(t.dragOrigin??0))<.01?drift:followDrag(drift,t.dragTarget,dt*(1-k.drive))}else{t.progress=prev+(t.dragTarget-prev)*(1-Math.exp(-55*dt));t.velocity=dt>0?(t.progress-prev)/dt:0}
-          t.renderProgress=t.progress
+          const prev=t.progress,previousVelocity=t.velocity;if(this.regrab&&this.brakeElapsed<PRESS_SCENE.brakeMs){this.brakeElapsed+=dt*1000;const k=brakeRetention(this.brakeElapsed);t.velocity*=Math.pow(1-k.damping,dt*60);const drift=clamp01(prev+t.velocity*dt*k.drive);t.progress=this.brakeElapsed<PRESS_SCENE.brakeLockMs&&Math.abs(t.dragTarget-(t.dragOrigin??0))<.01?drift:followDrag(drift,t.dragTarget,dt*(1-k.drive))}else{const next=trackDrag(prev,t.velocity,t.dragTarget,motionDt,60/material.response/material.damping);t.progress=next.progress;t.velocity=next.velocity}
+          if(motionDt>0)t.acceleration=(t.velocity-previousVelocity)/motionDt;t.renderProgress=t.progress
           const aim=curlTarget('drag',t.progress,t.grabU,this.config.pageCorner)
           t.curlAmount+=(aim-t.curlAmount)*(1-Math.pow(.96,dt*60))
-          for(let i=0;i<this.followers.length;i++){const a=this.followers[i],lead=i?this.followers[i-1]:t,goal=this.regrab?clamp01((a.dragOrigin??a.progress)+t.dragTarget-(t.dragOrigin??0)):t.dragTarget;a.velocity*=Math.pow(1-(this.regrab?brakeRetention(this.brakeElapsed).damping:0),dt*60);a.progress=orderedProgress(lead.progress,followDrag(a.progress,goal,dt));a.renderProgress=orderedProgress(lead.renderProgress,followRender(a.renderProgress,a.progress,dt))}
+          for(let i=0;i<this.followers.length;i++){const a=this.followers[i],lead=i?this.followers[i-1]:t,goal=this.regrab?clamp01((a.dragOrigin??a.progress)+t.dragTarget-(t.dragOrigin??0)):t.dragTarget;if(this.config.paperPhysics==='material'){
+              const previous=a.velocity,tracked=trackDrag(a.progress,a.velocity,goal,motionDt,60/material.response/material.damping)
+              a.progress=orderedProgress(lead.progress,tracked.progress);a.velocity=a.progress===tracked.progress?tracked.velocity:Math.min(tracked.velocity,lead.velocity);if(motionDt>0)a.acceleration=(a.velocity-previous)/motionDt
+            }else{a.velocity*=Math.pow(1-(this.regrab?brakeRetention(this.brakeElapsed).damping:0),dt*60);a.progress=orderedProgress(lead.progress,followDrag(a.progress,goal,dt))}
+            a.renderProgress=orderedProgress(lead.renderProgress,followRender(a.renderProgress,a.progress,dt))}
         }else{
-          const goal=this.releaseGoal??(commit&&Math.abs(target-this.index)>=this.followers.length+1?1:0)
+          const paced=this.input.active&&!t.chunkGesture,timing=this.input.timing(Math.abs(target-this.index))
+          const goal=this.releaseGoal??(commit&&(paced||Math.abs(target-this.index)>=this.followers.length+1)?1:0)
+          const endpointRendered=turnAtEndpoint(t,goal as 0|1)
+          const cancelRendered=goal===0&&[t,...this.followers].every(a=>turnAtEndpoint(a,0))
           const desired=goal===1&&!(t.span&&t.span>1)?desiredBatch(this.index,target,leafCount(this.config),t.direction):0
-          while(this.followers.length+1<desired)this.followers.push(newTurn(t.direction))
+          if(paced){
+            const tail=this.followers.at(-1)??t
+            if(this.followers.length+1<desired&&tail.progress>=timing.gap&&now-this.admissionAt>=timing.interval*1000){this.followers.push(newTurn(t.direction));this.admissionAt=now}
+          }else while(this.followers.length+1<desired)this.followers.push(newTurn(t.direction))
+          if(paced)while(this.followers.length+1>Math.max(1,desired)){
+            const tail=this.followers.at(-1)!;if(tail.progress!==0||tail.renderProgress!==0||tail.curlAmount!==0)break
+            this.followers.pop()
+          }
           const all=[t,...this.followers],multi=all.length>1
           for(let i=0;i<all.length;i++){
-            const a=all[i];let step=t.chunkGesture&&!multi?stepManualRelease(a.progress,goal as 0|1,dt,this.config.pageDuration):stepTurn(a.progress,a.velocity,goal,dt,this.config.pageDuration,multi)
-            a.progress=i?orderedProgress(all[i-1].progress,step.progress):step.progress
-            a.velocity=a.progress===step.progress?step.velocity:Math.min(step.velocity,all[i-1].velocity)
+            const a=all[i];const response=paced?this.config.pageDuration*timing.durationScale:t.chunkGesture&&!multi?this.config.pageDuration*.65:this.config.pageDuration;const leafGoal=paced&&i>=desired?0:goal;const step=stepTurn(a.progress,a.velocity,leafGoal,motionDt,response*material.response*material.damping,multi&&!paced,this.config.paperPhysics==='material'?a.acceleration??0:undefined,paced?timing.terminalGain:undefined)
+            a.progress=i?Math.min(orderedProgress(all[i-1].progress,step.progress),paced&&goal===1?Math.max(0,all[i-1].progress-.12):1):step.progress
+            a.velocity=a.progress===step.progress?step.velocity:Math.min(step.velocity,all[i-1].velocity);a.acceleration=a.progress===step.progress?step.acceleration:0
             a.renderProgress=followRender(a.renderProgress,a.progress,dt)
             if(i)a.renderProgress=orderedProgress(all[i-1].renderProgress,a.renderProgress)
             const aim=curlTarget('settle',a.progress,a.grabU,this.config.pageCorner)
@@ -209,28 +387,93 @@ export class BookRuntime {
             // Keep the active leaf until its render angle has caught up.
             if(step.settled&&Math.abs(a.renderProgress-a.progress)<.002&&a.progress===step.progress){a.renderProgress=i?orderedProgress(all[i-1].renderProgress,a.progress):a.progress;if(a.renderProgress===a.progress)a.curlAmount=0}
           }
-          if(Math.abs(t.progress-goal)<1e-8&&Math.abs(t.renderProgress-goal)<1e-8){
-            if(goal===1){this.index=nextLeaf(this.index,t.direction*(t.span??1),leafCount(this.config));this.turn=this.followers.shift()??null;this.releaseGoal=null}else if(all.every(a=>a.progress<.002&&a.renderProgress<.002)){this.turn=null;this.followers=[];this.releaseGoal=null}
+          if(endpointRendered&&t.progress===goal&&t.renderProgress===goal){
+            if(goal===1){this.index=nextLeaf(this.index,t.direction*(t.span??1),leafCount(this.config));this.turn=this.followers.shift()??null;this.releaseGoal=null}else if(cancelRendered&&all.every(a=>turnAtEndpoint(a,0))){this.turn=null;this.followers=[];this.releaseGoal=null}
           }
         }
       }
     }
-    const active=this.turn?[this.turn,...this.followers]:[]
+    this.perf?.phase('motion');const active=this.turn?[this.turn,...this.followers]:[]
     const display=drop.length?drop:active.filter(t=>!t.chunkMotion||t.chunkMotion.visible).map(t=>({direction:t.direction,progress:t.renderProgress,grip:t.grip,velocity:t.velocity,curlAmount:t.curlAmount,grabU:t.grabU,span:t.span,chunkGesture:t.chunkGesture,chunkLift:t.chunkMotion?.lift,handoffCurl:t.chunkMotion?.handoff?t.chunkMotion.handoffCurl:undefined}))
     if(display.length||this.settledIndex!==this.index){this.book.setReading(this.index,display);this.settledIndex=display.length?-1:this.index}
-    this.peakActive=Math.max(this.peakActive,active.filter(a=>!a.preview).length)
+    this.perf?.phase('geometry');this.peakActive=Math.max(this.peakActive,active.filter(a=>!a.preview).length)
     this.peakChunk=Math.max(this.peakChunk,this.turn?.span??0);this.host.dataset.peakChunkLeaves=String(this.peakChunk);this.host.dataset.chunkLeaves=String(this.turn?.span??0);this.host.dataset.chunkPhase=this.turn?.chunkMotion?.phase??'idle';this.host.dataset.chunkHandoff=String(!!this.turn?.chunkMotion?.handoff&&!!this.turn?.chunkMotion?.visible);this.host.dataset.chunkLift=String(this.turn?.chunkMotion?.lift??0);this.host.dataset.textureWarmCount=String(this.warmedTextures);this.host.dataset.chunkLandedFrames=String(this.turn?.chunkMotion?.landedFrames??0);this.host.dataset.openingLeaves=String(drop.length);this.host.dataset.stackGeometry='layered';this.host.dataset.groupDrag=String(this.groupDrag);this.host.dataset.regrab=String(this.regrab);this.host.dataset.pageGpu='chain-texture';this.host.dataset.activeLeaves=String(active.length);this.host.dataset.peakActiveLeaves=String(this.peakActive)
     this.host.dataset.hoverCurl=String(this.turn?.preview?this.turn.curlAmount:0)
-    this.host.dataset.pageProgress=String(this.turn?.progress??0);this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);if(this.reportedIndex!==this.index){this.reportedIndex=this.index;this.onPageIndex?.(this.index)}this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(ready)
+    this.host.dataset.pageProgress=String(this.turn?.progress??0);if(this.perf){this.host.dataset.pageRenderProgress=String(this.turn?.renderProgress??0);this.host.dataset.activeEndpoints=JSON.stringify(active.map(a=>({progress:a.progress,renderProgress:a.renderProgress,curlAmount:a.curlAmount})))}this.host.dataset.pageTarget=String(target);this.host.dataset.pageIndex=String(this.index);if(this.reportedIndex!==this.index){this.reportedIndex=this.index;this.onPageIndex?.(this.index)}this.host.dataset.pageTurn=this.turn?(this.turn.preview?'preview':'active'):'idle';this.host.dataset.pageReady=String(ready)
 
     const previousPose=this.readPose;this.readPose=easeTurn(clamp01(this.open/180));if(this.readPose>0||previousPose>0)this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch+READING_POSE_ADAPTER.pitchOffset*this.readPose),T.MathUtils.degToRad(this.config.yaw+READING_POSE_ADAPTER.yawOffset*this.readPose),0)
     this.book.root.position.set(this.config.width/200*this.readPose,0,0).applyEuler(this.book.root.rotation)
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     if(this.meshProbeMode==='4'&&(display.length||this.coverMotion)&&now-this.meshProbeAt>=500){this.meshProbeAt=now;this.host.dataset.triangleCorrection=JSON.stringify(this.book.resolveTriangleContacts())}
-    this.updateReadingCamera(dt,ready)
-    const shown=this.transitionCamera(dt);this.perf?.beginGpu();this.renderer.render(this.scene,shown);this.perf?.endGpu();if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
-    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(import.meta.env.DEV&&!this.turn&&!this.orbitReading&&!this.orbitMoving&&!this.cameraMoving&&!this.cameraPan&&this.touchMode==='idle'&&this.dropElapsed>=2000){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.readingView.zoom,this.readingView.x,this.readingView.y,this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.host.dataset.groupProbePasses=String(++this.probePasses);this.groupProbeKey=key;this.groupProbe='';this.largeGroupProbe='';const canLarge=leafCount(this.config)-this.index>6;for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const group=this.findGroup(x,y);if(group){if(!this.groupProbe)this.groupProbe=json;if(group.group>6)this.largeGroupProbe=json;if(!canLarge||this.largeGroupProbe)break}}}this.host.dataset.groupPick=this.groupProbe;this.host.dataset.largeGroupPick=this.largeGroupProbe}}
-    if(this.collisionEnabled&&display.length){this.openingPeak=Math.max(this.openingPeak,drop.length);const sample=this.book.collisionSample();this.collisionPeak=Math.max(this.collisionPeak,sample.crossings);this.collisionPairs+=sample.pairs;this.host.dataset.collision=JSON.stringify({...sample,peak:this.collisionPeak,openingPeak:this.openingPeak,pairsTotal:this.collisionPairs,frames:++this.collisionSamples})}
+    this.updateReadingCamera(cameraDt,ready)
+    const shown=this.transitionCamera(dt)
+    const moving=!!this.turn&&!this.turn.preview||!!this.coverMotion||drop.length>0
+    if(this.profilePending&&!moving&&!this.dragging&&this.dropElapsed>=SETTLED_DROP){
+      this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false'
+    }
+    if(this.adaptiveRendering)this.applyRenderBudget(moving?this.renderBudget.level:0)
+    this.perf?.phase('camera')
+    // The settled book's world-space shadow is independent of camera zoom/pan.
+    // Refresh on every moving pose, geometry revision, light/appearance edit,
+    // final landing frame, or warm/export pass. Never reuse for a moving leaf.
+    const shadowRevision=this.book.geometryMetrics().refreshCount
+    const shadowReuse=this.shadowCacheEnabled&&ready&&!this.turn&&!display.length&&!this.coverMotion&&this.dropElapsed>=SETTLED_DROP&&!this.shadowDirty&&shadowRevision===this.shadowRevision&&!!this.light.shadow.map
+    this.renderer.shadowMap.autoUpdate=!shadowReuse
+    this.perf?.beginGpu();const renderStart=performance.now(),firstRender=this.startupProbe?renderStart:0
+    const audit=this.firstCommandAt!==null?this.drawAudit:null
+    audit?.begin()
+    let drawBreakdown:ReturnType<DrawAudit['end']>|undefined
+    try{this.renderer.render(this.scene,shown)}finally{drawBreakdown=audit?.end();this.renderer.shadowMap.autoUpdate=true}
+    this.perf?.endGpu()
+    const effectiveMotion=!drop.length&&display.some(t=>t.progress>.002)
+    const priorityHeld=this.backgroundDeferred
+    // Preserve input priority until a genuinely moving frame is submitted.
+    // Cancellation / reduced motion must also release the background queue.
+    if(this.backgroundDeferred&&(effectiveMotion||!this.turn&&this.index===target||this.config.opening<READ_ANGLE)){
+      this.backgroundDeferred=false;this.book.resumeBackground()
+    }
+    if(shadowReuse)this.shadowReuses++;else this.shadowPasses++
+    this.shadowRevision=shadowRevision;this.shadowDirty=false
+    if(this.perf)this.host.dataset.shadowCache=JSON.stringify({passes:this.shadowPasses,reuses:this.shadowReuses,reused:shadowReuse,revision:shadowRevision})
+    if(this.adaptiveRendering){this.renderBudget.observe(performance.now()-renderStart,elapsed*1000,moving);this.host.dataset.renderBudget=JSON.stringify({level:this.appliedBudget,ratio:this.renderer.getPixelRatio(),shadowSize:this.light.shadow.mapSize.x})}
+    if(drop.length){this.readingWarmDone=true;this.host.dataset.readingWarm='opening-draw'}else if(ready&&!this.turn&&this.index===target)this.scheduleReadingWarm();
+    this.perf?.phase('render')
+    if(this.firstCommandAt!==null&&this.perf){
+      const frame=this.perf.frameSnapshot()
+      this.firstCommandFrameCount++
+      if(this.firstCommandFrames.length<12)this.firstCommandFrames.push({...frame,rafTimestamp:now,rafCallbackLagMs:Math.max(0,frame.startedAt-now),fromRequestMs:frame.startedAt-this.firstCommandAt,ready,priorityHeld,progress:display[0]?.progress??0,active:display.length,effective:effectiveMotion,drawBreakdown})
+    }
+    if(this.firstCommandAt!==null&&effectiveMotion){
+      const submitted=performance.now(),latency=submitted-this.firstCommandAt
+      this.firstMotionSamples.push(latency);if(this.firstMotionSamples.length>64)this.firstMotionSamples.shift()
+      if(this.perf){
+        const frame=this.perf.frameSnapshot(),textures=this.book.textureMetrics()
+        this.firstMotionTrace.push({latencyMs:latency,request:this.firstCommandContext,framesBeforeMotion:this.firstCommandFrames,submittedFrameCount:this.firstCommandFrameCount,firstMotionFrame:{...frame,fromRequestMs:frame.startedAt-this.firstCommandAt},submit:{index:this.index,target,pendingTextures:textures.pendingTextures,misses:textures.misses,slots:textures.slots,decodeActive:textures.decode.active,decodeQueued:textures.decode.queued,renderProgress:display[0].progress}})
+        if(this.firstMotionTrace.length>16)this.firstMotionTrace.shift()
+        this.host.dataset.firstMotionTrace=JSON.stringify(this.firstMotionTrace)
+      }
+      this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.host.dataset.firstMotion=JSON.stringify(this.firstMotionSamples)
+    }else if(!this.turn&&this.index===target){this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0}
+    if(this.startupProbe){const {started,...phases}=this.startupProbe;this.host.dataset.startup=JSON.stringify({...phases,firstRenderMs:performance.now()-firstRender,firstSubmitMs:performance.now()-started});this.startupProbe=null}if(this.handoffProbeEnabled){
+      const chunkPrevious=this.chunkHandoffPrevious;this.chunkHandoffPrevious=null
+      if(chunkPrevious&&!display.length&&this.index===chunkPrevious.index+chunkPrevious.direction*chunkPrevious.span*chunkPrevious.goal){
+        const destination=chunkPrevious.goal===1?chunkPrevious.direction:-chunkPrevious.direction as 1|-1
+        const points=this.book.stationaryChunkHandoffPoints(destination),stats=this.chunkHandoffStats
+        const mm=points.length===15&&chunkPrevious.points.length===15?Math.max(...points.map((p,i)=>p.distanceTo(chunkPrevious.points[i])*100)):NaN
+        if(Number.isFinite(mm)){stats.commits+=chunkPrevious.goal;stats.cancels+=1-chunkPrevious.goal;stats.maxMm=Math.max(stats.maxMm,mm);stats.lastMm=mm}else stats.invalid++
+        this.host.dataset.chunkHandoffQuality=JSON.stringify(stats)
+      }
+      if(display.length===1&&(display[0].span??1)>1&&(display[0].progress===0||display[0].progress===1)&&(display[0].chunkLift??0)===0&&this.turn?.chunkMotion?.phase==='landed'){
+        const a=display[0],goal=a.progress as 0|1,points=this.book.activeChunkHandoffPoints(goal===1?a.direction:-a.direction as 1|-1)
+        if(points.length===15)this.chunkHandoffPrevious={index:this.index,direction:a.direction,span:a.span!,goal,points}
+        else {this.chunkHandoffStats.invalid++;this.host.dataset.chunkHandoffQuality=JSON.stringify(this.chunkHandoffStats)}
+      }
+      const previous=this.handoffPrevious;this.handoffPrevious=null
+      if(previous&&this.index===previous.index+previous.direction&&!display.length){const points=this.book.stationaryHandoffPoints(previous.direction),mm=Math.max(...points.map((p,i)=>p.distanceTo(previous.points[i])*100));this.handoffStats={samples:this.handoffStats.samples+1,maxMm:Math.max(this.handoffStats.maxMm,mm),lastMm:mm};this.host.dataset.handoff=JSON.stringify(this.handoffStats)}
+      if(display.length===1&&!drop.length&&(display[0].span??1)===1&&display[0].progress===1&&(display[0].curlAmount??0)===0){const points=this.book.activeHandoffPoints();if(points.length)this.handoffPrevious={index:this.index,direction:display[0].direction,points}}
+    }if(this.book.handoffVisible())this.renderedHandoffFrames++;this.host.dataset.renderedHandoffFrames=String(this.renderedHandoffFrames);this.drawing=false
+    if(ready){const rect=this.renderer.domElement.getBoundingClientRect(),project=(v:T.Vector3|null)=>{if(!v)return '';const p=v.project(this.camera);return JSON.stringify([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2])};this.host.dataset.rightPick=project(this.book.readingPickPoint());this.host.dataset.activePick=this.turn&&!this.turn.preview?project(this.book.activePickPoint()):'';if(this.groupProbeEnabled&&!this.turn&&!this.orbitReading&&!this.orbitMoving&&!this.cameraMoving&&!this.cameraPan&&this.touchMode==='idle'&&this.dropElapsed>=SETTLED_DROP){const key=[this.index,rect.width,rect.height,this.config.pitch,this.config.yaw,this.camera.position.toArray().join(','),this.camera.quaternion.toArray().join(','),this.readingView.zoom,this.readingView.x,this.readingView.y,this.config.pageCount,this.open,this.dropElapsed].join(':');if(key!==this.groupProbeKey){this.host.dataset.groupProbePasses=String(++this.probePasses);this.groupProbeKey=key;this.groupProbe='';this.largeGroupProbe='';const canLarge=leafCount(this.config)-this.index>6;for(const point of this.book.groupPickCandidates(1)){const json=project(point),[x,y]=JSON.parse(json) as [number,number];const group=this.findGroup(x,y);if(group){if(!this.groupProbe)this.groupProbe=json;if(group.group>6)this.largeGroupProbe=json;if(!canLarge||this.largeGroupProbe)break}}}this.host.dataset.groupPick=this.groupProbe;this.host.dataset.largeGroupPick=this.largeGroupProbe}}
+    this.perf?.phase('picking');if(this.collisionEnabled&&display.length){this.openingPeak=Math.max(this.openingPeak,drop.length);const sample=this.book.collisionSample();this.collisionPeak=Math.max(this.collisionPeak,sample.crossings);this.collisionPairs+=sample.pairs;this.host.dataset.collision=JSON.stringify({...sample,peak:this.collisionPeak,openingPeak:this.openingPeak,pairsTotal:this.collisionPairs,frames:++this.collisionSamples})}
     if(this.meshProbeEnabled&&display.length&&now-this.meshProbeAt>=120){this.meshProbeAt=now;const m=this.book.meshCollisionSample(this.meshProbeMode==='2');this.meshProbeTotal.frames++;this.meshProbeTotal.segments+=m.segments;this.meshProbeTotal.hits+=m.hits;const phase=drop.length?'opening':this.turn?.span&&this.turn.span>1?'chunk':'leaf';this.meshProbeTotal.byPhase[phase]=(this.meshProbeTotal.byPhase[phase]??0)+m.hits;for(const [name,n] of Object.entries(m.byMesh))this.meshProbeTotal.byMesh[name]=(this.meshProbeTotal.byMesh[name]??0)+n;if(m.examples.length&&this.meshProbeTotal.examples.length<40)this.meshProbeTotal.examples.push(...m.examples.slice(0,40-this.meshProbeTotal.examples.length));this.host.dataset.meshCollision=JSON.stringify({...this.meshProbeTotal,last:m})}
     if(this.meshProbeMode==='3'&&(display.length||this.coverMotion)&&now-this.meshProbeAt>=500){this.meshProbeAt=now;this.host.dataset.triangleCollision=JSON.stringify(this.book.triangleCollisionSample())}
     if(this.meshProbeMode==='5'){if(!display.length&&!this.coverMotion)this.book.resetSweptContacts();else if(now-this.meshProbeAt>=120){if(now-this.meshProbeAt>750)this.book.resetSweptContacts();this.meshProbeAt=now;this.host.dataset.sweptCollision=JSON.stringify(this.book.sweptCollisionSample())}}
@@ -240,27 +483,53 @@ export class BookRuntime {
       this.contactWorker??=new ContactWorkerClient(reply=>{if(!this.disposed&&!this.contextLost)this.host.dataset.workerCollision=JSON.stringify({...reply,dropped:this.contactWorker?.dropped??0})})
       this.contactWorker.request(()=>this.book.workerContactSnapshot())
     }
-    this.perf?.finish()
-    if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
+    if(this.surfaceProbeEnabled&&display.length)this.host.dataset.surfaceQuality=JSON.stringify(this.book.measureActiveSurfaces());this.perf?.phase('diagnostics');this.host.dataset.geometryRevision=String(this.geometryRevision);if(this.perf){this.host.dataset.geometryMetrics=JSON.stringify(this.book.geometryMetrics());this.host.dataset.renderResources=JSON.stringify({...this.renderer.info.memory,programs:this.renderer.info.programs?.length??0})}if(this.curveProbeEnabled)this.host.dataset.curveQuality=JSON.stringify(this.book.curveQuality());this.host.dataset.textureCache=JSON.stringify(this.book.textureMetrics());this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.perf?.phase('metrics');this.perf?.finish(this.turn&&!this.turn.preview?'active':'idle')
+    if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<SETTLED_DROP||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
   private apply(c:BookConfig){
-    this.scene.background=new T.Color(c.background);this.readLight=-1;this.applyLight(this.open/180)
+    this.shadowDirty=true;this.scene.background=new T.Color(c.background);this.readLight=-1;this.applyLight(this.open/180)
     this.book.root.rotation.set(T.MathUtils.degToRad(c.pitch),T.MathUtils.degToRad(c.yaw),0)
     this.floor.position.y=-c.height/200-.22;if(c.opening<READ_ANGLE){this.orbitReading=false;this.savedReading=null;this.cancelOrbitTransition()}this.controls.enabled=c.opening>=READ_ANGLE?this.orbitReading:c.interaction!=='hover'
     this.invalidate()
   }
+  requestTurn(direction:1|-1,eventTime?:number){
+    if(this.disposed||this.contextLost||this.dragging)return this.config.pageIndex
+    const index=nextLeaf(this.config.pageIndex,direction,leafCount(this.config))
+    if(index===this.config.pageIndex)return index
+    if(this.readingWarmHandle!==null){window.cancelIdleCallback(this.readingWarmHandle);this.readingWarmHandle=null;this.host.dataset.readingWarm='interrupted'}
+    if(this.cancelProgramProbe){this.cancelProgramProbe();this.cancelProgramProbe=null;if(this.host.dataset.programWarm==='pending')this.host.dataset.programWarm='interrupted'}
+    const now=performance.now()
+    if(this.inputPriority&&(!this.turn||this.turn.preview)&&!this.backgroundDeferred){this.book.pauseBackground();this.backgroundDeferred=true}
+    if(this.perf&&(!this.turn||this.turn.preview)&&this.firstCommandAt===null){
+      const textures=this.book.textureMetrics()
+      this.firstCommandAt=now;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstCommandContext={direction,index:this.index,target:index,eventDispatchMs:eventTime!==undefined&&Number.isFinite(eventTime)&&eventTime>=0&&eventTime<=now?now-eventTime:null,warm:this.host.dataset.readingWarm??'none',depthWarm:this.host.dataset.depthWarm??'none',programWarm:this.host.dataset.programWarm??'none',pendingTextures:textures.pendingTextures,misses:textures.misses,slots:textures.slots,decodeActive:textures.decode.active,decodeQueued:textures.decode.queued}
+    }
+    this.input.push(direction,now);this.perf?.markInput()
+    this.releaseGoal=null;this.releaseIndex=null;this.config={...this.config,pageIndex:index}
+    this.invalidate();return index
+  }
   update(c:BookConfig){
+    if(c.pageIndex!==this.config.pageIndex){this.input.reset();this.perf?.markInput()}
+    // Page navigation is not a model/material edit. Direct commands already
+    // reached the runtime synchronously; this is the persisted React echo.
+    if((Object.keys(c) as (keyof BookConfig)[]).every(k=>k==='pageIndex'||c[k]===this.config[k])){
+      if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
+      this.config={...c};this.invalidate();return
+    }
+    if(c.opening!==this.config.opening)this.input.reset()
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
-    const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
-    const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged){this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
-    if(rebuild){this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
+    const keys=['width','height','boardThickness','cornerRadius','pageInset','spineStyle'] as const
+    const rebuild=keys.some(k=>this.config[k]!==c[k]);const shapeChanged=(["paperPhysics","paperThickness","paperGrammage","paperModulus","paperDamping","pageCurl","pageCorner","pageCount","coverFlex","pageCoupling"] as const).some(k=>this.config[k]!==c[k]);const depthChanged=physicalBook(this.config).thickness!==physicalBook(c).thickness;const frameChanged=rebuild||depthChanged||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged||shapeChanged)this.resetHandoffProbes();if(frameChanged){if(this.dragging){this.dragging=false;this.regrab=false;this.dragVelocity=0;this.groupDrag=1;this.releaseGoal=null;this.releaseIndex=null;this.motionClock.reset()}this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
+    if(rebuild){this.backgroundDeferred=false;this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.stockDepthWarm.dispose();delete this.host.dataset.stockDepthWarm;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
+    if(rebuild||depthChanged||shapeChanged){this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality}
+    if((depthChanged||shapeChanged)&&!rebuild){this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';delete this.host.dataset.workerCollision}
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
-    if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c);if(rebuild)this.fit(true)
+    if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c);if(rebuild||depthChanged&&!this.turn)this.fit(true)
   }
   switchProject(c:BookConfig){
     // A project change is not a page-turn command. Reset transient state
     // before applying the new model, while retaining the WebGL renderer.
-    this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
+    this.stockDepthWarm.dispose();delete this.host.dataset.stockDepthWarm;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false';this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.releaseIndex=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
     this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
     this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
     this.savedReading=null;this.cancelOrbitTransition();this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
@@ -270,13 +539,23 @@ export class BookRuntime {
     if(this.contextLost||this.orbitReading||this.config.opening<READ_ANGLE||this.open<179.5||this.openingActive||this.reduced.matches||nextLeaf(this.index,direction,leafCount(this.config))===this.index)return false
     if(regrab){if(!this.turn||this.turn.preview||this.turn.direction!==direction)return false}
     else if(this.turn&&!this.turn.preview||this.index!==this.config.pageIndex)return false
-    const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);t.preview=false;this.hovered=false;t.grip=grip;t.dragTarget=t.progress;t.grabU=grabU;this.turn=t;this.dragging=true;this.releaseGoal=null
+    this.grabTarget=this.config.pageIndex;if(!regrab)this.input.reset();this.dragVelocity=0;
+    const t=this.turn?.direction===direction?this.turn:newTurn(direction,grip);if(regrab){t.progress=t.renderProgress;for(const a of this.followers)a.progress=a.renderProgress}t.preview=false;this.hovered=false;t.grip=grip;t.dragTarget=t.progress;this.dragIntent=gestureIntent(false,t.progress);t.grabU=grabU;this.turn=t;this.dragging=true;this.releaseGoal=null
     this.renderedHandoffFrames=0;this.host.dataset.renderedHandoffFrames='0';this.regrab=regrab;this.host.dataset.dragAccepted=regrab?'regrab':'new';this.brakeElapsed=0;const available=direction===1?leafCount(this.config)-this.index:this.index;this.groupDrag=regrab?(t.span??1)+this.followers.length:Math.max(1,Math.min(group,available));t.chunkElapsed=undefined;t.chunkGesture=true;t.dragOrigin=t.progress;if(regrab){for(const a of this.followers)a.dragOrigin=a.progress}else if(this.groupDrag>6){t.span=this.groupDrag;this.followers=[]}else{t.span=undefined;this.followers=Array.from({length:this.groupDrag-1},()=>newTurn(direction))}if((t.span??1)>1)t.chunkMotion=regrab&&t.chunkMotion?regrabChunkMotion(t.chunkMotion):newChunkMotion(true,t.progress,t.chunkMotion?.lift??0,t.curlAmount||curlTarget('hover',t.progress,t.grabU,this.config.pageCorner*this.config.pageHover));this.invalidate();return true
   }
-  dragPage(progress:number,_velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.perf?.markInput();this.turn.dragTarget=clamp01(progress);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.turn.grabU=grabU;this.invalidate()}}
-  endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??(this.regrab?displacementPx>=5||displacementPx>-5&&t.progress>.5:releaseCommit(displacementPx));const index=accepted?nextLeaf(this.index,t.direction*this.groupDrag,leafCount(this.config)):this.index;this.dragging=false;this.regrab=false;t.velocity=0;this.releaseGoal=accepted?1:0;this.releaseIndex=index;this.groupDrag=1;this.invalidate();return index}
+  dragPage(progress:number,velocity=0,grip?:number,grabU?:number){if(this.dragging&&this.turn){this.input.reset();this.perf?.markInput();this.turn.dragTarget=clamp01(progress);this.dragIntent=gestureIntent(this.dragIntent,this.turn.dragTarget);this.dragVelocity=T.MathUtils.clamp(velocity,-4,4);if(grip!==undefined)this.turn.grip=grip;if(grabU!==undefined)this.turn.grabU=grabU;this.invalidate()}}
+  endPageDrag(commit:boolean|null=null,displacementPx=0){if(!this.dragging||!this.turn)return null;const t=this.turn,accepted=commit??releaseGesture(t.dragTarget,this.dragVelocity,displacementPx,this.regrab,this.groupDrag,this.dragIntent);const index=accepted?nextLeaf(this.index,t.direction*this.groupDrag,leafCount(this.config)):this.index;this.dragging=false;this.regrab=false;this.releaseGoal=accepted?1:0;this.releaseIndex=index;this.config={...this.config,pageIndex:index};if(commit===null&&!t.chunkMotion&&this.dragVelocity*(accepted?1:-1)>0){t.velocity=this.dragVelocity;t.acceleration=0}this.groupDrag=1;this.invalidate();return index}
+  // A tap on an active page is another reading command, not a drag cancel.
+  tapRegrab(eventTime?:number){
+    if(!this.dragging||!this.turn||!this.regrab)return null
+    const direction=this.turn.direction
+    this.dragging=false;this.regrab=false;this.groupDrag=1;this.releaseGoal=null;this.releaseIndex=null
+    this.turn.chunkGesture=false
+    this.config={...this.config,pageIndex:this.grabTarget}
+    return this.requestTurn(direction,eventTime)
+  }
   private applyLight(open:number){
-    const p=easeTurn(clamp01(open));if(Math.abs(p-this.readLight)<.002)return;this.readLight=p
+    const p=easeTurn(clamp01(open));if(Math.abs(p-this.readLight)<.002)return;this.readLight=p;this.shadowDirty=true
     const a=PRESS_SCENE.browse,b=PRESS_SCENE.read,mix=(x:number,y:number)=>x+(y-x)*p,scale=this.config.width/100/PRESS_SCENE.sourceWidth
     const color=(x:number,y:number)=>new T.Color(x).lerp(new T.Color(y),p)
     this.light.color.copy(color(a.keyColor,b.keyColor));this.light.intensity=mix(a.keyIntensity,b.keyIntensity)*this.config.light/3
@@ -308,7 +587,7 @@ export class BookRuntime {
     else if(!next){const saved=was&&!reset?this.savedReading:null;this.orbitReading=false;this.fit();if(saved){this.camera.position.copy(saved.position);this.controls.target.copy(saved.target);this.controls.update();this.readingView={...saved.view};this.readingTarget={...saved.view};if(saved.bounds&&saved.bounds.width===this.host.clientWidth&&saved.bounds.height===this.host.clientHeight){this.readingBounds=saved.bounds;this.readBase=saved.base}}this.savedReading=null}
     this.controls.enabled=this.config.opening>=READ_ANGLE?this.orbitReading:this.config.interaction!=='hover';if(was!==next&&!reset&&!this.reduced.matches){this.modeTransition={from:previous,target:previousTarget,elapsed:0};this.host.dataset.modeTransition='active'}this.invalidate();return restored
   }
-  fit(preserveDirection=false){this.cancelModeTransition();this.cancelOrbitTransition();const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,this.config.thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.controls.minDistance=Math.max(.3,radius*.85);this.controls.maxTargetRadius=radius*1.5;this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.cursor.copy(this.controls.target);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
+  fit(preserveDirection=false){this.cancelModeTransition();this.cancelOrbitTransition();const direction=preserveDirection?this.camera.position.clone().sub(this.controls.target).normalize():new T.Vector3(0,.04,1).normalize();const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.readAutoFit=true;this.resetReadingCamera();const radius=Math.hypot(this.config.width/100,this.config.height/200,physicalBook(this.config).thickness/100);const half=T.MathUtils.degToRad(this.camera.fov/2);const limiting=Math.min(half,Math.atan(Math.tan(half)*this.camera.aspect));const distance=radius/Math.sin(Math.max(.06,limiting))*PRESS_SCENE.spreadSlack/PRESS_SCENE.fitFraction;this.controls.maxDistance=Math.max(15,distance*2);this.controls.minDistance=Math.max(.3,radius*.85);this.controls.maxTargetRadius=radius*1.5;this.camera.position.copy(direction.multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.cursor.copy(this.controls.target);this.host.dataset.fitDistance=String(distance);this.controls.update();this.controls.enableDamping=damping;this.invalidate()}
   setView(view:'front'|'back'|'side'|'spine'|'top'|'perspective'){
     const animated=this.orbitReading&&!this.reduced.matches;const previous=this.camera.position.clone().sub(this.controls.target);this.fit();const d=this.camera.position.distanceTo(this.controls.target);const dir=view==='perspective'?new T.Vector3(0,.04,1):new T.Vector3(view==='side'?1:view==='spine'?-1:0,view==='top'?1:0,view==='front'?1:view==='back'?-1:.0001).applyEuler(this.book.root.rotation);dir.normalize();this.readAutoFit=!this.orbitReading
     if(animated&&previous.lengthSq()>1e-8){this.camera.position.copy(this.controls.target).add(previous);this.controls.update();this.orbitTransition={from:previous,to:dir.multiplyScalar(d),elapsed:0};this.host.dataset.orbitTransition='active'}else{this.camera.position.copy(this.controls.target).add(dir.multiplyScalar(d));this.controls.update()}
@@ -355,7 +634,7 @@ export class BookRuntime {
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
     if(this.frameProbeEnabled&&this.turn&&!this.turn.preview){this.book.root.updateMatrixWorld(true);this.camera.updateMatrixWorld(true);const points=this.book.activeFramePoints();if(points.length){let overflow=0;for(const p of points){p.project(this.camera);overflow=Math.max(overflow,(Math.abs(p.x)-1)*w/2,(Math.abs(p.y)-1)*h/2)}this.frameOverflow=Math.max(this.frameOverflow,overflow);this.host.dataset.motionFrame=JSON.stringify({samples:++this.frameSamples,overflow,peakOverflow:this.frameOverflow})}}
-    this.host.dataset.stackMetrics=JSON.stringify(this.book.stackMetrics());this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
+    this.host.dataset.touchMode=this.touchMode;this.host.dataset.readZoom=this.readingView.zoom.toFixed(4);this.host.dataset.readPan=JSON.stringify([this.readingView.x,this.readingView.y]);this.host.dataset.readCameraMoving=String(this.cameraMoving)
   }
   private readWheel=(e:WheelEvent)=>{
     this.cancelModeTransition();
@@ -369,7 +648,7 @@ export class BookRuntime {
   }
   private readPanStart=(e:PointerEvent)=>{
     this.cancelModeTransition();
-    if(this.orbitReading||this.config.opening<READ_ANGLE||!this.readingBounds||this.dragging||!(e.button===1||e.button===2||e.button===0&&e.altKey))return
+    if(this.orbitReading||this.config.opening<READ_ANGLE||!this.readingBounds||this.dragging||this.cameraPan||this.touchPoints.size||!(e.button===1||e.button===2||e.button===0&&e.altKey))return
     e.preventDefault();e.stopPropagation();this.clearPageHover()
     this.cameraPan={id:e.pointerId,x:e.clientX,y:e.clientY,start:{...this.readingView}};this.readingTarget={...this.readingView};this.readingVelocity={zoom:0,x:0,y:0};this.host.setPointerCapture(e.pointerId)
   }
@@ -390,8 +669,9 @@ export class BookRuntime {
     this.touchPinch={x:(a.x+b.x)/2-rect.left-rect.width/2,y:(a.y+b.y)/2-rect.top-rect.height/2,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),view:{...this.readingView}}
     this.touchMode='pinch';this.cameraMoving=false;this.readingVelocity={zoom:0,x:0,y:0};this.readingTarget={...this.readingView}
   }
+  hasReadingTouch(){return this.touchPoints.size>0}
   readTouchDown(id:number,x:number,y:number,time:number){
-    if(this.orbitReading||this.config.opening<READ_ANGLE||!this.readingBounds||this.openingActive)return null
+    if(this.orbitReading||this.config.opening<READ_ANGLE||!this.readingBounds||this.openingActive||this.cameraPan)return null
     this.touchPoints.set(id,{x,y});this.clearPageHover()
     let index:number|null=null
     if(this.touchPoints.size>=2){
@@ -419,7 +699,7 @@ export class BookRuntime {
       }else{this.touchMode='pan';p.view={...this.readingView};this.readingTarget={...this.readingView};this.cameraMoving=false;this.readingVelocity={zoom:0,x:0,y:0}}
     }
     if(this.touchMode==='page'&&p.direction){
-      p.distance=-dx*p.direction;this.dragPage(clamp01((p.progress??0)+referenceDragProgress(p.distance,bounds.width,true)))
+      const next=clamp01((p.progress??0)+referenceDragProgress(-dx*p.direction,bounds.width,true));const before=clamp01((p.progress??0)+referenceDragProgress(p.distance??0,bounds.width,true));p.velocityX=sampleDragVelocity(p.velocityX,before,next,Math.max(.008,(time-p.time)/1000));p.time=time;p.distance=-dx*p.direction;this.dragPage(next,p.velocityX)
     }else if(this.touchMode==='pan'){
       const lim=panLimits(bounds,p.view.zoom)
       this.readingView={zoom:p.view.zoom,x:rubber(p.view.x+dx,lim.minX,lim.maxX,bounds.width,PRESS_SCENE.panRubber),y:rubber(p.view.y+dy,lim.minY,lim.maxY,bounds.height,PRESS_SCENE.panRubber)}
@@ -436,8 +716,8 @@ export class BookRuntime {
       else if(this.touchPoints.size===1){this.touchMode='hold';this.touchPinch=null}
       else {this.touchMode='idle';this.touchPinch=null;if(b)this.readingTarget=cancel?clampReadingView(this.readingView,b):snapReadingView(this.readingView,b)}
     }else{
-      if(mode==='page')index=this.endPageDrag(cancel?false:null,p?.distance??0)
-      else if(mode==='pending'&&!cancel&&p){const hit=this.pageHit(p.x,p.y);if(hit)index=nextLeaf(this.config.pageIndex,hit.direction,leafCount(this.config))}
+      if(mode==='page'){if(p&&time-p.time>120)this.dragVelocity=0;index=this.endPageDrag(cancel?false:null,p?.distance??0)}
+      else if(mode==='pending'&&!cancel&&p){const hit=this.pageHit(p.x,p.y);if(hit)index=this.requestTurn(hit.direction,time)}
       else if(mode==='pan'&&b)this.readingTarget=cancel?clampReadingView(this.readingView,b):snapReadingView(this.readingView,b,p&&time-p.time<120?p.velocityX:0)
       this.touchMode='idle';this.touchStart=null
     }
@@ -466,10 +746,10 @@ export class BookRuntime {
   zoomReading(factor:number){if(this.contextLost||this.orbitReading||this.dragging||!this.readingBounds)return;this.clearPageHover();this.readingTarget=zoomAround(this.readingTarget,this.readingTarget.zoom*factor,0,0,this.readingBounds);this.invalidate()}
   capture(scale=1,transparent=false,longEdge?:number){
     this.cancelModeTransition();
-    if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');const old=this.renderer.getPixelRatio(),w=this.host.clientWidth,h=this.host.clientHeight
-    if(!w||!h)throw Error('预览区域不可用');const longest=Math.max(w,h),ratio=longEdge!==undefined&&Number.isFinite(longEdge)?Math.max(256,Math.min(4096,Math.round(longEdge)))/longest:Math.min(old*Math.max(1,Math.min(2,scale)),4096/longest);
+    if(this.contextLost)throw Error('图形上下文已丢失，请恢复预览后再导出');const w=this.host.clientWidth,h=this.host.clientHeight
+    if(!w||!h)throw Error('预览区域不可用');const previousBudget=this.appliedBudget;this.applyRenderBudget(0);const old=this.renderer.getPixelRatio(),longest=Math.max(w,h),ratio=longEdge!==undefined&&Number.isFinite(longEdge)?Math.max(256,Math.min(4096,Math.round(longEdge)))/longest:Math.min(old*Math.max(1,Math.min(2,scale)),4096/longest);
     const background=this.scene.background,floorVisible=this.floor.visible;
-    try{if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.invalidate()}
+    try{this.shadowDirty=true;this.renderer.shadowMap.autoUpdate=true;if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.applyRenderBudget(previousBudget);this.invalidate()}
   }
-  dispose(){this.disposed=true;this.contactWorker?.dispose();this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
+  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();this.drawAudit?.dispose();this.stockDepthWarm.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();window.removeEventListener('resize',this.onResize);this.resolutionQuery?.removeEventListener('change',this.onResolutionChange);this.resolutionQuery=null;this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.warmDrawTarget?.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }

@@ -6,6 +6,8 @@ export const PRESS_SCENE={
  read:{ambientColor:8355194,ambientIntensity:1.4,keyColor:0xf9f6f0,keyIntensity:1.41,key:[9.4,4.6,4.3],sunColor:0xf5f7ff,sunIntensity:1.4,sun:[-15,-15,39.7],shadowHalf:51.9,near:.001,far:256.8,bias:-.00118,normalBias:.0401,radius:9.74},
  shadowMap:2048,mobileShadowMap:512,sourceWidth:15.6
 } as const
+// Presentation time is independent of the bounded physics integrator.
+export const presentationStep=(elapsed:number)=>clamp(elapsed,0,.5)
 export function coverProgress(from:number,to:number,elapsed:number){
  const duration=to>from?PRESS_SCENE.coverMs:PRESS_SCENE.closeMs
  const t=clamp(elapsed/duration),e=t*t*(3-2*t)
@@ -17,7 +19,7 @@ export function groupCount(available:number,depthFromTop:number){return Math.max
 // Original chunk release: exponential attraction with a minimum .9 progress/s.
 export function chunkRelease(progress:number,goal:number,dt:number){const delta=goal-progress,step=Math.max(Math.abs(delta)*(1-Math.exp(-7*dt)),.9*dt);return Math.abs(delta)<=step?goal:progress+Math.sign(delta)*step}
 export function chunkDuration(count:number){return Math.min(1100,Math.max(700,700+45*Math.log2(Math.max(1,count))))}
-export function chunkAutoProgress(elapsed:number,count:number){const t=clamp((elapsed-120)/chunkDuration(count));return t>=1?1:elapsed<=120?0:.03+.87*(.5-Math.sin(Math.asin(1-2*(.5-.5*Math.cos(Math.PI*t)))/3))}
+export function chunkAutoProgress(elapsed:number,count:number){const duration=chunkDuration(count);if(elapsed>=120+duration-1e-9)return 1;if(elapsed<=120)return 0;const t=clamp((elapsed-120)/duration),eased=clamp(t*t*t*(10+t*(-15+6*t)));return clamp(.5-Math.sin(Math.PI/6-Math.PI*eased/3))}
 
 export function isBrakeable(progress:number){const a=clamp(progress)*Math.PI;return a>PRESS_SCENE.brakeMinAngle&&a<Math.PI-PRESS_SCENE.brakeMinAngle}
 

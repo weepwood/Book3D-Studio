@@ -1,6 +1,6 @@
 import {defaults,presets,type BookConfig} from '../core/schema'
 export const settingGroups={
- geometry:['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'],
+ geometry:['width','height','thickness','thicknessMode','paperThickness','paperPhysics','paperGrammage','paperModulus','paperDamping','boardThickness','cornerRadius','pageInset','spineStyle'],
  pose:['yaw','pitch','coverFlex','pageCoupling'],
  material:['coverColor','inkColor','paperColor','finish','roughness'],
  reading:['pageCurl','pageDuration','pageCorner','pageHover','pageBleed'],

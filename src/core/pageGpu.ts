@@ -1,6 +1,6 @@
 import * as T from 'three'
 import {PRESS_REFERENCE as R} from './pressReference'
-import {makeChain,rollPoint,safeRollAmount,type Chain} from './pageChain'
+import {makeChain,rollPoint,rollPivot,safeRollAmount,type Chain} from './pageChain'
 export function packChain(chain:Chain,data=new Float32Array(R.chainNodes*2*4)){
   for(let i=0;i<R.chainNodes;i++){
     const a=i*4,b=(R.chainNodes+i)*4
@@ -13,7 +13,7 @@ export function packChain(chain:Chain,data=new Float32Array(R.chainNodes*2*4)){
 // The CPU chain and local unit conversion remain shared with the reference tests.
 const shaderSource=`
 uniform sampler2D ppChain;
-uniform float ppWidth,ppHeight,ppAmount,ppTilt,ppSpan,ppLift,ppFloor;
+uniform float ppWidth,ppHeight,ppAmount,ppTilt,ppSpan,ppLift,ppFloor,ppPivot;
 vec4 ppSample(float u){
   float k=clamp(u,0.0,1.0)*32.0;
   float i=min(31.0,floor(k)), t=k-i, t2=t*t, t3=t2*t, ds=ppWidth/32.0;
@@ -31,9 +31,9 @@ vec3 ppShape(vec3 p,out vec3 n){
   vec4 s=ppSample(u); n=vec3(-s.w,0.0,s.z);
   vec3 base=vec3(s.x,y,s.y);
   vec2 d=vec2(cos(ppTilt),sin(ppTilt));
-  float xi=dot(vec2(x-.74*ppWidth,y),d);
+  float xi=dot(vec2(x,y),d)-ppPivot;
   if(ppAmount<1e-6||xi<=0.0||u<=0.0)return ppClearance(base,n);
-  float steps=max(1.0,ceil(xi/(ppSpan/64.0))),ds=xi/steps;
+  float steps=clamp(ceil(xi/(ppSpan/64.0)),1.0,128.0),ds=xi/steps;
   vec2 roll=vec2(0.0);
   for(int i=0;i<128;i++){
     if(float(i)>=steps)break;
@@ -49,31 +49,32 @@ vec3 ppShape(vec3 p,out vec3 n){
 }
 `
 export function createGpuPage(width:number,height:number){
-  const data=packChain(makeChain(width,0,0))
+  const data=packChain(makeChain(width,0,0)),scratch=new Float32Array(data.length)
   const texture=new T.DataTexture(data,R.chainNodes,2,T.RGBAFormat,T.FloatType)
   texture.minFilter=texture.magFilter=T.NearestFilter;texture.generateMipmaps=false;texture.needsUpdate=true
-  const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1},ppFloor:{value:-1e6}}
+  const uniforms={ppChain:{value:texture},ppWidth:{value:width},ppHeight:{value:height},ppAmount:{value:0},ppTilt:{value:0},ppSpan:{value:R.curl.span/R.sourcePageWidth*width},ppLift:{value:1},ppFloor:{value:-1e6},ppPivot:{value:rollPivot(width,height,0)}}
   function attach(material:T.Material){
     const prior=material.onBeforeCompile.bind(material),priorKey=material.customProgramCacheKey()
-    material.customProgramCacheKey=()=> 'book3d-chain-roll-v2:'+priorKey
+    material.customProgramCacheKey=()=> 'book3d-chain-roll-v4:'+priorKey
     material.onBeforeCompile=(shader,renderer)=>{
       prior(shader,renderer)
       Object.assign(shader.uniforms,uniforms)
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\n'+shaderSource)
-        .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nvec3 ppNormal; ppShape(position,ppNormal); objectNormal=ppNormal;')
-        .replace('#include <begin_vertex>','vec3 ppUnusedNormal; vec3 transformed=ppShape(position,ppUnusedNormal);')
+        .replace('void main() {','void main() {\nvec3 ppNormal; vec3 ppPosition=ppShape(position,ppNormal);')
+        .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nobjectNormal=ppNormal;')
+        .replace('#include <begin_vertex>','vec3 transformed=ppPosition;')
     }
   }
   const depth=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,side:T.DoubleSide});attach(depth)
   let pickProxy:T.Mesh<T.PlaneGeometry,T.MeshBasicMaterial>|null=null,pickDirty=true
-  let current=makeChain(width,0,0),pose={progress:0,amount:0,grip:0,grabU:1,floor:-1e6}
-  function update(progress:number,flex:number,amount:number,grip:number,grabU:number,chain?:Chain,floor=-1e6){
-    pickDirty=true;current=chain??makeChain(width,progress,flex);pose={progress,amount,grip,grabU,floor};uniforms.ppFloor.value=floor;packChain(current,data);texture.needsUpdate=true
-    uniforms.ppAmount.value=safeRollAmount(amount,progress);uniforms.ppTilt.value=grip*R.curl.foldTiltDeg*Math.PI/180
+  let current=makeChain(width,0,0),pose={progress:0,amount:0,grip:0,grabU:1,floor:-1e6,boundRoot:false}
+  function update(progress:number,flex:number,amount:number,grip:number,grabU:number,chain?:Chain,floor=-1e6,boundRoot=false){
+    pickDirty=true;current=chain??makeChain(width,progress,flex);pose={progress,amount,grip,grabU,floor,boundRoot};uniforms.ppFloor.value=floor;packChain(current,scratch);if(!scratch.every((v,i)=>v===data[i])){data.set(scratch);texture.needsUpdate=true}
+    uniforms.ppAmount.value=safeRollAmount(amount,progress);uniforms.ppTilt.value=grip*R.curl.foldTiltDeg*Math.PI/180;uniforms.ppPivot.value=rollPivot(width,height,uniforms.ppTilt.value,boundRoot)
     uniforms.ppSpan.value=R.curl.span/R.sourcePageWidth*width*(1+(1-Math.max(0,Math.min(1,grabU)))*1.2)
     uniforms.ppLift.value=progress>.5?-1:1
   }
-  function point(u:number,v:number){const [x,y,z]=rollPoint(current,u,v,height,pose.amount,pose.grip,pose.grabU,pose.progress);return [x,y,Math.max(z,pose.floor)] as const}
+  function point(u:number,v:number){const [x,y,z]=rollPoint(current,u,v,height,pose.amount,pose.grip,pose.grabU,pose.progress,pose.boundRoot);return [x,y,Math.max(z,pose.floor)] as const}
   function writePick(g:T.PlaneGeometry){const uv=g.getAttribute('uv'),p=g.getAttribute('position');for(let i=0;i<p.count;i++){const xyz=point(uv.getX(i),uv.getY(i)-.5);p.setXYZ(i,...xyz)}p.needsUpdate=true;g.computeBoundingSphere();return g}
   return {attach,depth,texture,update,pickPoint(u:number,v:number){return new T.Vector3(...point(u,v))},pickGeometry(){return writePick(new T.PlaneGeometry(width,height,48,18))},pickMesh(){if(!pickProxy)pickProxy=new T.Mesh(new T.PlaneGeometry(width,height,48,18),new T.MeshBasicMaterial({side:T.DoubleSide}));if(pickDirty){writePick(pickProxy.geometry);pickDirty=false}return pickProxy},dispose(){texture.dispose();depth.dispose();pickProxy?.geometry.dispose();pickProxy?.material.dispose()}}
 }

@@ -19,7 +19,14 @@ export function sampleStackProfile(width:number,stiffness:number,liveCurl:number
 // curvature limiter and arc-length compensation. The renderer's cover basis
 // must be verified before enabling these profiles on the live static stacks.
 export function offsetStackProfile(width:number,angle:(u:number)=>number,offset:number,nodes=49){
- const integration=192,ds=width/integration,arc=new Float64Array(integration+1),x=new Float64Array(integration+1),z=new Float64Array(integration+1)
+ const integration=192,ds=width/integration
+ if(offset===0){
+  const result=new Float64Array(nodes*2),x=new Float64Array(integration+1),z=new Float64Array(integration+1)
+  for(let i=1;i<=integration;i++){const mid=angle((i-.5)/integration);x[i]=x[i-1]+ds*Math.cos(mid);z[i]=z[i-1]+ds*Math.sin(mid)}
+  for(let i=0;i<nodes;i++){const k=i*integration/(nodes-1),lo=Math.min(integration-1,Math.floor(k)),t=k-lo;result[i*2]=x[lo]+(x[lo+1]-x[lo])*t;result[i*2+1]=z[lo]+(z[lo+1]-z[lo])*t}
+  return result
+ }
+ const arc=new Float64Array(integration+1),x=new Float64Array(integration+1),z=new Float64Array(integration+1)
  let previous=angle(0),maxCurvature=0
  for(let i=1;i<=integration;i++){const next=angle(i/integration);maxCurvature=Math.max(maxCurvature,offset*(next-previous)/ds);previous=next}
  const safe=maxCurvature>.9?offset*.9/maxCurvature:offset,start=angle(0)

@@ -73,7 +73,7 @@ test('真实活动页重新抓取与取消',async({page},testInfo)=>{
 
 
 test('真实书芯边缘成组拾取与释放',async({page},testInfo)=>{
- await page.goto('/')
+ await page.goto('/?pick=1')
  const host=page.locator('.canvas-host');await expect(host.locator('canvas')).toBeVisible()
  await page.getByRole('button',{name:'打开书籍',exact:true}).click()
  await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
@@ -96,7 +96,7 @@ test('超六张整块书芯跳转',async({page},testInfo)=>{
  const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
  await page.getByRole('button',{name:/模型/}).click()
  const host=page.locator('.canvas-host');await page.getByRole('button',{name:'打开书籍',exact:true}).click();await expect(host).toHaveAttribute('data-page-ready','true',{timeout:12000})
- await page.getByRole('button',{name:'下一页',exact:true}).evaluate((b:HTMLButtonElement)=>{for(let i=0;i<12;i++)b.click()})
+ await page.locator('.left').getByRole('button',{name:/内页/}).click();await choose(page.getByRole('combobox',{name:'跳转跨页'}),'12')
  await expect(host).toHaveAttribute('data-page-target','12')
  await expect.poll(async()=>Number(await host.getAttribute('data-peak-chunk-leaves')),{timeout:15000}).toBe(12)
  if(Number(await host.getAttribute('data-chunk-leaves'))===12)await page.screenshot({path:testInfo.outputPath('large-chunk.png')})
@@ -104,7 +104,7 @@ test('超六张整块书芯跳转',async({page},testInfo)=>{
  await expect(host).toHaveAttribute('data-chunk-phase','idle')
  await expect(host).toHaveAttribute('data-chunk-lift','0')
  expect(Number(await host.getAttribute('data-texture-warm-count'))).toBeGreaterThanOrEqual(2)
- await page.getByRole('button',{name:'上一页',exact:true}).evaluate((b:HTMLButtonElement)=>{for(let i=0;i<8;i++)b.click()})
+ await choose(page.getByRole('combobox',{name:'跳转跨页'}),'4')
  await expect(host).toHaveAttribute('data-page-target','4')
  await expect(host).toHaveAttribute('data-page-index','4',{timeout:55000})
  await expect(host).toHaveAttribute('data-chunk-phase','idle')
@@ -169,7 +169,7 @@ test('设置分组重置、材质预设与跨页选择保留作品数据',async(
  await expect(host).toHaveAttribute('data-page-index','12')
 })
 
-test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testInfo)=>{
+for(const physics of ['legacy','material'] as const)test('真实厚块抓取、交接纸叶衰减及取消返回 '+physics,async({page},testInfo)=>{
  // Read pixels inside the same rAF as the actual WebGL draw, not after a
  // later Playwright screenshot command has allowed the overlay to disappear.
  await page.addInitScript(()=>{
@@ -181,7 +181,11 @@ test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testI
      }
    })
  })
- await page.goto('/')
+ await page.goto('/?pick=1&surface=1')
+ if(physics==='material'){
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'material-handoff.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,thicknessMode:'automatic',paperPhysics:'material',paperThickness:.15,pageCount:40}))})
+  await expect(page.getByTestId('paper-material')).toBeVisible()
+ }
  await page.getByRole('button',{name:/内页/}).first().click()
  const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
  await page.getByRole('button',{name:/模型/}).click()
@@ -201,4 +205,9 @@ test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testI
  await page.mouse.move(point[0]-150,point[1],{steps:4});await expect(host).toHaveAttribute('data-chunk-handoff','false',{timeout:15000})
  await page.mouse.move(point[0]+15,point[1],{steps:4});await page.mouse.up()
  await expect(host).toHaveAttribute('data-chunk-phase','idle',{timeout:55000});await expect(host).toHaveAttribute('data-page-index','0')
+ const surface=JSON.parse((await host.getAttribute('data-surface-quality'))!)
+ expect(surface.handoff.samples).toBeGreaterThan(0);expect(surface.handoff.triangles).toBeGreaterThan(0)
+ expect(surface.handoff.invalid).toBe(0);expect(Number.isFinite(surface.handoff.maxAreaError)).toBe(true)
+ expect(surface.handoffSupport.samples).toBe(surface.handoff.samples);expect(surface.handoffSupport.invalid).toBe(0)
+ await writeFile(testInfo.outputPath('chunk-handoff-surface.json'),JSON.stringify(surface,null,2))
 })

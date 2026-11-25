@@ -3,6 +3,7 @@ import {clamp} from './pagePhysics'
 // Reference keeps six live leaves near the split. Here the same limit bounds
 // a contiguous active batch; stationary stack meshes represent the remainder.
 export const LIVE_LEAF_LIMIT=6
+export const STACK_SETTLE_MS=R.gravityDelayMs*LIVE_LEAF_LIMIT+R.gravityDropMs
 export type ActiveLeaf={direction:1|-1;progress:number;opening?:boolean;span?:number;chunkGesture?:boolean;chunkLift?:number;handoffCurl?:number;grip?:number;velocity?:number;curlAmount?:number;grabU?:number}
 export function batchLayout(index:number,count:number,depth:number,direction:1|-1,requested:number,chunk=false){
   const unit=depth/Math.max(1,count),i=clamp(index,0,count)

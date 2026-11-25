@@ -28,3 +28,8 @@
 /* Unified line icons and aligned control hit areas. */
 .left .nav svg{flex:0 0 17px;color:#626b60}.left .nav.active svg{color:#35543e}.actions button,.view-actions button,.viewport-bottom button{display:inline-flex;align-items:center;justify-content:center;gap:6px}.actions button[aria-label]{width:32px;height:32px;padding:0}.viewport-bottom button[aria-label]{width:32px;height:32px;padding:0}.view-actions button svg,.viewport-bottom button svg{flex:none}.panel-toggle[aria-pressed=false] svg{opacity:.65}.range-head label{font-weight:500;color:#44483f}.number-field input{font-variant-numeric:tabular-nums}.viewport-bottom{border-color:#dedbd3}.viewport-top .view-actions button{white-space:nowrap}
 @media(max-width:620px){.view-actions button svg,.viewport-bottom button:not([aria-label]) svg{display:none}.viewport-bottom button[aria-label]{width:26px;height:28px}.actions button[aria-label]{width:27px;height:28px}}
+
+/* Reading controls keep a stable hit target during bursts and digit changes. */
+.viewport-bottom .page-counter{position:relative;flex:0 0 104px;width:104px;min-width:104px}
+.viewport-bottom .page-pending{position:absolute;left:50%;bottom:calc(100% + 14px);transform:translateX(-50%);padding:3px 6px;border-radius:4px;background:#faf9f3e8;pointer-events:none;white-space:nowrap}
+@media(max-width:620px){.viewport-bottom .page-counter{flex-basis:94px;width:94px;min-width:94px}}

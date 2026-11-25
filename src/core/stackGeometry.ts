@@ -1,7 +1,9 @@
 import * as T from 'three'
 import {stackBend,stackSweep,offsetStackProfile,PRESS_STACK_PROFILE} from './stackProfile'
-import {sampleChain,rollPoint,type Chain} from './pageChain'
+import {sampleChain,rollPoint,projectChainLength,type Chain} from './pageChain'
 import {clamp} from './pagePhysics'
+import {createLayerSolver} from './layerSolver'
+import {createSectionWorkspace,solveSectionClearance,type SectionEdge} from './sectionSolver'
 // The reference's page model is much larger. Fit its angular profile to our
 // independent cover clearance before sampling; this is explicitly an adapter.
 export function stackAngle(width:number,clearance:number,drop:number,open:number,coupling:number){
@@ -37,16 +39,24 @@ export function turningChain(width:number,p:number,flex:number,right:Chain,left:
 }
 // Physical reference leaf pitch .0234 in page width 15.6; two alternating
 // bands per repeated tile. Density stays stable when the split changes.
-export function paperEdgeRepeat(width:number,depth:number){return Math.max(0,depth)/(2*.0234/15.6*Math.max(width,1e-8))}
+export function paperEdgeRepeat(width:number,depth:number,leafPitch?:number){return Math.max(0,depth)/(2*Math.max(1e-8,leafPitch??(.0234/15.6*width)))}
 export function stackSection(layers:Chain[],depth:number,compression:number,u:number){
  const bottom=sampleChain(layers[0],u).z,top=depth*(1-clamp(compression))+sampleChain(layers[layers.length-1],u).z
  return {bottom,top,thickness:top-bottom}
+}
+// Every tessellated face repeats the same material column (and often row).
+// Keep the exact Float32 source coordinates, not quantized approximations.
+function materialColumns(original:Float32Array,width:number){
+ const byX=new Map<number,number>(),u:number[]=[],indices=new Uint16Array(original.length/3)
+ for(let i=0;i<indices.length;i++){const x=original[i*3];let column=byX.get(x);if(column===undefined){column=u.length;byX.set(x,column);u.push(x/width+.5)}indices[i]=column}
+ return {u,indices}
 }
 export function createStackGeometry(w:number,h:number,depthSegments=2){
  const g=new T.BoxGeometry(w,h,1,48,1,depthSegments),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),originalUV=Float32Array.from(uv.array),normal=g.getAttribute('normal'),edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
  // Original material depth coordinate survives all bending and compression.
  const depthCoord=new T.Float32BufferAttribute(Array.from({length:p.count},(_,i)=>original[i*3+2]+.5),1);g.setAttribute('paperDepth',depthCoord)
- return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0){for(let i=0;i<p.count;i++){const x=original[i*3],y=original[i*3+1],z=original[i*3+2],fraction=clamp(sign===1?z+.5:.5-z),layer=fraction*(layers.length-1),lo=Math.min(layers.length-2,Math.floor(layer)),q=layer-lo,a=sampleChain(layers[lo],x/w+.5),b=sampleChain(layers[lo+1],x/w+.5);p.setXYZ(i,T.MathUtils.lerp(a.x,b.x,q)-w/2,y,z*depth+sign*(T.MathUtils.lerp(a.z,b.z,q)-depth*clamp(compression)*fraction))}const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true;p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
+ const columns=materialColumns(original,w);let lastRepeat=NaN
+ return {g,pose(layers:Chain[],depth:number,sign:1|-1,compression=0,leafPitch?:number){const samples=layers.map(chain=>columns.u.map(u=>sampleChain(chain,u)));for(let i=0;i<p.count;i++){const y=original[i*3+1],z=original[i*3+2],fraction=clamp(sign===1?z+.5:.5-z),layer=fraction*(layers.length-1),lo=Math.min(layers.length-2,Math.floor(layer)),q=layer-lo,col=columns.indices[i],a=samples[lo][col],b=samples[lo+1][col];p.setXYZ(i,T.MathUtils.lerp(a.x,b.x,q)-w/2,y,z*depth+sign*(T.MathUtils.lerp(a.z,b.z,q)-depth*clamp(compression)*fraction))}const repeat=paperEdgeRepeat(w,depth,leafPitch);if(repeat!==lastRepeat){lastRepeat=repeat;for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,originalUV[i*2]*repeat,originalUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,originalUV[i*2],originalUV[i*2+1]*repeat)}uv.needsUpdate=true}p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()}}
 }
 // Interpolate the material depth on the actual hit triangle, not world Z.
 export function pickedDepth(g:T.BufferGeometry,face:{a:number;b:number;c:number},point:T.Vector3,sign:1|-1){
@@ -75,12 +85,12 @@ export function chunkRowProgress(progress:number,heightFraction:number,direction
 export function chunkEndpointWeight(p:number){const t=clamp(Math.min(p,1-p)/.15);return 1-t*t*(3-2*t)}
 // Independent world-space lift; zero at the sewing edge, smoothly applied
 // across the first .2 of page width. Tangents track the displaced curve.
-export function liftChunkChain(chain:Chain,lift:number,progress:number):Chain{
+export function liftChunkChain(chain:Chain,lift:number,progress:number,preserveArc=false):Chain{
  if(lift===0)return chain
  const n=chain.positions.length/2,positions=chain.positions.slice(),tangents=chain.tangents.slice(),p=clamp(progress),sign=1-2*p*p*(3-2*p)
  for(let i=0;i<n;i++){const u=clamp(i/(n-1)/.2),z=lift*u*u*(3-2*u);positions[i*2]-=chain.tangents[i*2+1]*z*sign;positions[i*2+1]+=chain.tangents[i*2]*z*sign}
  for(let i=0;i<n;i++){const a=Math.max(0,i-1)*2,b=Math.min(n-1,i+1)*2,x=positions[b]-positions[a],z=positions[b+1]-positions[a+1],d=Math.hypot(x,z)||1;tangents[i*2]=x/d;tangents[i*2+1]=z/d}
- return {width:chain.width,positions,tangents}
+ const lifted={width:chain.width,positions,tangents};return preserveArc?projectChainLength(lifted):lifted
 }
 // Height of the actual tessellated static block face in the open cover basis.
 // Interpolation follows the 48-column mesh, including the shortened curved edge.
@@ -88,19 +98,96 @@ export function stackHeightSampler(chain:Chain,anchorX:number,anchorZ:number,sig
  const points=Array.from({length:49},(_,i)=>{const p=sampleChain(chain,i/48);return {x:anchorX+sign*p.x,z:anchorZ+p.z}});if(sign===-1)points.reverse()
  return (x:number)=>{if(x<points[0].x-.001||x>points[48].x+.001)return -Infinity;let lo=0,hi=48;while(hi-lo>1){const mid=(lo+hi)>>1;if(points[mid].x<x)lo=mid;else hi=mid}const a=points[lo],b=points[hi];return T.MathUtils.lerp(a.z,b.z,clamp((x-a.x)/Math.max(1e-8,b.x-a.x)))}
 }
+// One-sided Lipschitz majorant: only add clearance, never remove it.
+// The binding column is immutable; propagate its lift outward but never
+// move it to satisfy a neighboring column. Endpoint blend controls strength.
+export function spreadClearance(lifts:Float64Array,cols:number,rows:number,dx:number,dy:number,strength:number,scratch?:Float64Array){
+ if(strength<=0)return
+ const proposed=scratch??new Float64Array(lifts.length);proposed.set(lifts)
+ const sx=dx*.45,sy=dy*.45
+ for(let row=0;row<rows;row++){
+  const start=row*cols
+  for(let c=1;c<cols;c++){const k=start+c;proposed[k]=Math.max(proposed[k],proposed[k-1]-sx)}
+  for(let c=cols-2;c>=1;c--){const k=start+c;proposed[k]=Math.max(proposed[k],proposed[k+1]-sx)}
+ }
+ for(let c=1;c<cols;c++){
+  for(let row=1;row<rows;row++){const k=row*cols+c;proposed[k]=Math.max(proposed[k],proposed[k-cols]-sy)}
+  for(let row=rows-2;row>=0;row--){const k=row*cols+c;proposed[k]=Math.max(proposed[k],proposed[k+cols]-sy)}
+ }
+ for(let i=0;i<lifts.length;i++)lifts[i]+=(proposed[i]-lifts[i])*strength
+}
+// Root-compatible clearance envelope. Propagate a required lift across
+// adjacent material columns, but cap *extra* lift by the available distance
+// from the fixed root. Original contact requirements always take precedence.
+// Saturate early enough to address edge spikes, but continuously release
+// the extra displacement at exact handoff (zero value and slope).
+export function contactEnvelopeStrength(weight:number){const t=clamp((1-weight)*16);return t*t*(3-2*t)}
+export function contactClearanceEnvelope(lifts:Float64Array,cols:number,rows:number,dx:number,dy:number,strength:number,scratch?:{envelope:Float64Array;spread:Float64Array}){
+ if(strength<=0)return
+ const proposed=scratch?.envelope??new Float64Array(lifts.length);proposed.set(lifts)
+ spreadClearance(proposed,cols,rows,dx,dy,1,scratch?.spread)
+ const slope=.45
+ for(let r=0;r<rows;r++){
+  const root=lifts[r*cols]
+  for(let c=1;c<cols;c++){
+   const k=r*cols+c,extra=Math.max(0,Math.min(proposed[k],root+c*dx*slope)-lifts[k])
+   lifts[k]+=extra*strength
+  }
+ }
+}
+// Keep the existing contact model for ordinary slopes. Blend toward the
+// root-constrained envelope only when the raw obstacle field has a spike.
+export function adaptiveContactClearance(lifts:Float64Array,cols:number,rows:number,dx:number,dy:number,weight:number,scratch?:ReturnType<typeof createContactClearanceScratch>){
+ if(weight>=1)return
+ let slope=0
+ for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+  const k=r*cols+c
+  if(c>0)slope=Math.max(slope,Math.abs(lifts[k]-lifts[k-1])/dx)
+  if(r>0)slope=Math.max(slope,Math.abs(lifts[k]-lifts[k-cols])/dy)
+ }
+ const t=clamp((slope-.65)/.55),endpoint=clamp((weight-.4)/.3),blend=t*t*(3-2*t)*endpoint*endpoint*(3-2*endpoint)
+ if(blend===0){spreadClearance(lifts,cols,rows,dx,dy,1-weight,scratch?.spread);return}
+ const proposed=scratch?.candidate??new Float64Array(lifts.length);proposed.set(lifts)
+ contactClearanceEnvelope(proposed,cols,rows,dx,dy,contactEnvelopeStrength(weight),scratch)
+ spreadClearance(lifts,cols,rows,dx,dy,1-weight,scratch?.spread)
+ for(let i=0;i<lifts.length;i++)lifts[i]+=(proposed[i]-lifts[i])*blend
+}
+export function createContactClearanceScratch(length:number){
+ return {candidate:new Float64Array(length),envelope:new Float64Array(length),spread:new Float64Array(length)}
+}
 export type ChunkLayer={chain:Chain;x:number;z:number}
 export function createChunkGeometry(w:number,h:number){
  const g=new T.BoxGeometry(w,h,1,48,CHUNK_HEIGHT_SEGMENTS,2),p=g.getAttribute('position'),original=Float32Array.from(p.array),uv=g.getAttribute('uv'),baseUV=Float32Array.from(uv.array),normal=g.getAttribute('normal')
  const faceIndices=[4,5].map(face=>{const group=g.groups.find(x=>x.materialIndex===face)!;return Array.from(g.index!.array.slice(group.start,group.start+group.count))})
  const handoff=new T.BufferGeometry();handoff.setAttribute('position',new T.BufferAttribute(original.slice(),3));handoff.setAttribute('uv',new T.BufferAttribute(baseUV.slice(),2));handoff.setIndex(faceIndices[0]);let face=4
  const edgeAxis=Array.from({length:p.count},(_,i)=>Math.abs(normal.getX(i))>.5?1:Math.abs(normal.getY(i))>.5?2:0)
- return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number){
+ const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),liftKeys=Int32Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48));const handoffVertices=faceIndices.map(indices=>[...new Set(indices)]);let materialEdges:{i:number;j:number;rest:number}[]|null=null,sectionEdges:SectionEdge[]|null=null,sectionWorkspace:ReturnType<typeof createSectionWorkspace>|null=null,minimumScratch:Float64Array|null=null,clearanceScratch:ReturnType<typeof createContactClearanceScratch>|null=null
+ const getMaterialEdges=()=>{if(materialEdges)return materialEdges;materialEdges=[];const seenEdges=new Set<string>();for(const indices of faceIndices)for(let k=0;k<indices.length;k+=3)for(const [i,j] of [[indices[k],indices[k+1]],[indices[k+1],indices[k+2]],[indices[k+2],indices[k]]]){
+   const key=Math.min(i,j)+':'+Math.max(i,j);if(seenEdges.has(key))continue;seenEdges.add(key)
+   const rest=Math.hypot(original[i*3]-original[j*3],original[i*3+1]-original[j*3+1]);if(rest>1e-8)materialEdges.push({i,j,rest})
+ }return materialEdges};const columns=materialColumns(original,w),rowIndices=Uint8Array.from({length:p.count},(_,i)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS));let lastRepeat=NaN,layerSolver:ReturnType<typeof createLayerSolver>|null=null,layerKeys:Int32Array|null=null
+ return {g,handoff,pose(chain:Chain,depth:number,rowChain?:(heightFraction:number)=>Chain,layers?:ChunkLayer[],weight=0,overlay?:{direction:1|-1;progress:number;curl:number;grip:number;grabU:number},floor=-Infinity,clearance?:(x:number)=>number,leafPitch?:number,slidingLayers=false,elasticSections=false,independentLayers=false,contactEnvelope=false){
    const rows=rowChain?Array.from({length:CHUNK_HEIGHT_SEGMENTS+1},(_,i)=>rowChain(i/CHUNK_HEIGHT_SEGMENTS)):null
-   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),u=original[i*3]/w+.5,a=sampleChain(rows?.[row]??chain,u),off=original[i*3+2]*depth;let x=a.x-a.tz*off,z=a.z+a.tx*off;const layer=layers?.[Math.round((original[i*3+2]+.5)*2)];if(layer){const p=sampleChain(layer.chain,u);x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,Math.max(floor,z))}
+   const samples=(rows??[chain]).map(c=>columns.u.map(u=>sampleChain(c,u))),layerSamples=layers?.map(l=>columns.u.map(u=>sampleChain(l.chain,u)))
+   // A loose stack bends through layer slip rather than stretching the outer
+   // fibers of a bonded solid. Use the sewn-edge normal for parallel layer
+   // translations; actual bound-layer endpoints still override this pose.
+   const slipNormals=slidingLayers?(rows??[chain]).map(c=>sampleChain(c,0)):null
+   for(let i=0;i<p.count;i++){const y=original[i*3+1],row=rowIndices[i],col=columns.indices[i],a=samples[rows?row:0][col],off=original[i*3+2]*depth,offsetNormal=slipNormals?.[rows?row:0]??a;let x=a.x-offsetNormal.tz*off,z=a.z+offsetNormal.tx*off;const layerIndex=Math.round((original[i*3+2]+.5)*2),layer=layers?.[layerIndex];if(layer){const p=layerSamples![layerIndex][col];x=T.MathUtils.lerp(x,p.x+layer.x,weight);z=T.MathUtils.lerp(z,p.z+layer.z,weight)}p.setXYZ(i,x,y,z)}
    // Translate complete material cross-sections rather than clipping only
    // the bottom vertices. Preserve local thickness while clearing the stack.
-   if(clearance){const lifts=new Float64Array((CHUNK_HEIGHT_SEGMENTS+1)*49),key=(i:number)=>Math.round(clamp(original[i*3+1]/h+.5)*CHUNK_HEIGHT_SEGMENTS)*49+Math.round(clamp(original[i*3]/w+.5)*48);for(let i=0;i<p.count;i++){const k=key(i);lifts[k]=Math.max(lifts[k],clearance(p.getX(i))-p.getZ(i))}for(let i=0;i<p.count;i++){const lift=lifts[key(i)];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
-   const repeat=paperEdgeRepeat(w,depth);for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true
+   if(clearance||Number.isFinite(floor)){lifts.fill(0);for(let i=0;i<p.count;i++){const k=liftKeys[i];lifts[k]=Math.max(lifts[k],Math.max(floor,clearance?.(p.getX(i))??-Infinity)-p.getZ(i))}if(slidingLayers){const minimum=elasticSections?(minimumScratch??=new Float64Array(lifts.length)):null;if(minimum)minimum.set(lifts);clearanceScratch??=createContactClearanceScratch(lifts.length);if(contactEnvelope)adaptiveContactClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,weight,clearanceScratch);else spreadClearance(lifts,49,CHUNK_HEIGHT_SEGMENTS+1,w/48,h/CHUNK_HEIGHT_SEGMENTS,1-weight,clearanceScratch.spread)
+      if(minimum&&weight<1){const topology=getMaterialEdges(),edges=sectionEdges??=topology.map(({i,j,rest})=>({a:liftKeys[i],b:liftKeys[j],dx:0,dy:0,dz:0,rest}))
+        for(let k=0;k<edges.length;k++){const {i,j}=topology[k],edge=edges[k];edge.dx=p.getX(j)-p.getX(i);edge.dy=p.getY(j)-p.getY(i);edge.dz=p.getZ(j)-p.getZ(i)}
+        solveSectionClearance(lifts,minimum,edges,49,1-weight,6,sectionWorkspace??=createSectionWorkspace(lifts.length))}
+    }for(let i=0;i<p.count;i++){const lift=lifts[liftKeys[i]];if(lift>0)p.setZ(i,p.getZ(i)+lift)}}
+   if(slidingLayers&&independentLayers&&weight<1&&depth>1e-8){
+    const n=lifts.length,solver=layerSolver??=createLayerSolver(49,CHUNK_HEIGHT_SEGMENTS+1,w,h),keys=layerKeys??=Int32Array.from({length:p.count},(_,i)=>Math.round((original[i*3+2]+.5)*2)*n+liftKeys[i])
+    solver.begin();for(let i=0;i<p.count;i++)solver.set(keys[i],p.getX(i),p.getY(i),p.getZ(i))
+    const result=solver.solve(1-weight,depth,floor,clearance)
+    if(result?.accepted)for(let i=0;i<p.count;i++)p.setZ(i,p.getZ(i)+solver.offsets[keys[i]])
+   }
+   const repeat=paperEdgeRepeat(w,depth,leafPitch);if(repeat!==lastRepeat){lastRepeat=repeat;for(let i=0;i<p.count;i++){if(edgeAxis[i]===1)uv.setXY(i,baseUV[i*2]*repeat,baseUV[i*2+1]);else if(edgeAxis[i]===2)uv.setXY(i,baseUV[i*2],baseUV[i*2+1]*repeat)}uv.needsUpdate=true}
    p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox()
    if(overlay){
      const side=overlay.direction===1?4:5,sign=overlay.direction
@@ -108,9 +195,9 @@ export function createChunkGeometry(w:number,h:number){
      const hp=handoff.getAttribute('position');hp.array.set(p.array)
      // Overlay uses the same actual block face, including row twist and end
      // blending. Apply only local curl displacement, never extra thickness.
-     for(const i of new Set(faceIndices[side-4])){
-       const y=original[i*3+1],u=original[i*3]/w+.5,row=Math.round(clamp(y/h+.5)*CHUNK_HEIGHT_SEGMENTS),c=rows?.[row]??chain,a=sampleChain(c,u)
-       const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress)
+     for(const i of handoffVertices[side-4]){
+       const y=original[i*3+1],col=columns.indices[i],u=columns.u[col],row=rowIndices[i],c=rows?.[row]??chain,a=samples[rows?row:0][col]
+       const rolled=rollPoint(c,u,y/h,h,overlay.curl,overlay.grip,overlay.grabU,overlay.progress,slidingLayers)
        hp.setXYZ(i,p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003,rolled[1],Math.max(floor,clearance?.(p.getX(i)+rolled[0]-a.x-sign*a.tz*.0003)??-Infinity,p.getZ(i)+rolled[2]-a.z+sign*a.tx*.0003))
      }
      hp.needsUpdate=true;handoff.computeVertexNormals();handoff.computeBoundingSphere();handoff.computeBoundingBox()
