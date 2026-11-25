@@ -1,0 +1,26 @@
+import type {ContactRequest,ContactReply} from './contactWorkerProtocol'
+// One in-flight request; no unbounded queue. Only detached copies are sent.
+export class ContactWorkerClient {
+ private worker:Worker|null=null
+ private id=0
+ private pending=false
+ private disposed=false
+ dropped=0
+ constructor(private receive:(reply:ContactReply)=>void){}
+ request(capture:()=>Omit<ContactRequest,'id'>){
+  if(this.disposed)return
+  if(this.pending){this.dropped++;return}
+  try{
+   if(!this.worker){
+    this.worker=new Worker(new URL('./contact.worker.ts',import.meta.url),{type:'module'})
+    const worker=this.worker
+    worker.onmessage=(event:MessageEvent<ContactReply>)=>{if(this.worker!==worker||event.data.id!==this.id||this.disposed)return;this.pending=false;this.receive(event.data)}
+    worker.onerror=event=>{if(this.worker!==worker||this.disposed)return;this.pending=false;this.worker?.terminate();this.worker=null;this.receive({id:this.id,error:event.message||'Collision worker failed'})}
+   }
+   const id=++this.id,data=capture();this.pending=true
+   this.worker.postMessage({...data,id},data.meshes.flatMap(m=>[m.positions.buffer,m.indices.buffer]))
+  }catch(error){this.pending=false;this.receive({id:this.id,error:String(error)})}
+ }
+ reset(){this.id++;this.pending=false;this.worker?.terminate();this.worker=null}
+ dispose(){this.disposed=true;this.reset()}
+}

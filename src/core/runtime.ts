@@ -2,6 +2,7 @@ import * as T from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createBook } from './book'
+import {ContactWorkerClient} from './contactWorkerClient'
 import {createTextureWarmer} from './textureWarm'
 import { bookDimensions } from './geometry'
 import {initialReadingView,clampReadingView,zoomAround,springReading,panLimits,rubber,touchPageAllowed,snapReadingView,pinchReading,fitReadingMotion,type ReadingView,type ReadingBounds} from './readingCamera'
@@ -64,6 +65,7 @@ export class BookRuntime {
   private meshProbeEnabled=this.meshProbeMode==='1'||this.meshProbeMode==='2'
   private meshProbeAt=-Infinity
   private solidProbeKey=''
+  private contactWorker:ContactWorkerClient|null=null
   private meshProbeTotal={frames:0,segments:0,hits:0,byMesh:{} as Record<string,number>,byPhase:{} as Record<string,number>,examples:[] as unknown[]}
   private frameProbeEnabled=new URLSearchParams(location.search).get('frame')==='1'
   private frameOverflow=0
@@ -147,7 +149,7 @@ export class BookRuntime {
     const index=this.endPageDrag(false);this.clearPageHover();this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null
     if(this.readingBounds)this.readingTarget=clampReadingView(this.readingView,this.readingBounds);this.invalidate();return index
   }
-  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
+  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
   private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
@@ -233,6 +235,11 @@ export class BookRuntime {
     if(this.meshProbeMode==='3'&&(display.length||this.coverMotion)&&now-this.meshProbeAt>=500){this.meshProbeAt=now;this.host.dataset.triangleCollision=JSON.stringify(this.book.triangleCollisionSample())}
     if(this.meshProbeMode==='5'){if(!display.length&&!this.coverMotion)this.book.resetSweptContacts();else if(now-this.meshProbeAt>=120){if(now-this.meshProbeAt>750)this.book.resetSweptContacts();this.meshProbeAt=now;this.host.dataset.sweptCollision=JSON.stringify(this.book.sweptCollisionSample())}}
     if(this.meshProbeMode==='6'){const key=[this.open,this.index,display.length].join(':');if((display.length||this.coverMotion||key!==this.solidProbeKey)&&(now-this.meshProbeAt>=500||!display.length&&!this.coverMotion)){this.meshProbeAt=now;this.solidProbeKey=key;this.host.dataset.solidCollision=JSON.stringify(this.book.solidCollisionSample())}}
+    if(this.meshProbeMode==='7'&&(display.length||this.coverMotion)&&now-this.meshProbeAt>=250){
+      this.meshProbeAt=now
+      this.contactWorker??=new ContactWorkerClient(reply=>{if(!this.disposed&&!this.contextLost)this.host.dataset.workerCollision=JSON.stringify({...reply,dropped:this.contactWorker?.dropped??0})})
+      this.contactWorker.request(()=>this.book.workerContactSnapshot())
+    }
     this.perf?.finish()
     if(this.modeTransition||this.orbitTransition||this.orbitMoving||this.cameraMoving||this.coverMotion||openingTarget===180&&this.dropElapsed<2000||this.index!==target||!!this.turn&&(!this.turn.preview||!this.hovered||Math.abs(this.turn.curlAmount-curlTarget('hover',0,this.turn.grabU,this.config.pageCorner*this.config.pageHover))>.01))this.frame=requestAnimationFrame(this.draw)
   }
@@ -246,7 +253,7 @@ export class BookRuntime {
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
     const keys=['width','height','thickness','boardThickness','cornerRadius','pageInset','spineStyle'] as const
     const rebuild=keys.some(k=>this.config[k]!==c[k]);const frameChanged=rebuild||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged){this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
-    if(rebuild){this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
+    if(rebuild){this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root)}else this.book.updateAppearance(c)
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
     if(c.pageHover<=0)this.hovered=false;this.groupProbeKey='';this.settledIndex=-1;this.apply(c);if(rebuild)this.fit(true)
   }
@@ -464,5 +471,5 @@ export class BookRuntime {
     const background=this.scene.background,floorVisible=this.floor.visible;
     try{if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.invalidate()}
   }
-  dispose(){this.disposed=true;this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
+  dispose(){this.disposed=true;this.contactWorker?.dispose();this.perf?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }

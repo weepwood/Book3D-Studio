@@ -14,3 +14,18 @@ export function contactScore(c:{penetration:number;coplanar:number}){return c.pe
 export function improvesContacts(before:{penetration:number;coplanar:number},after:{penetration:number;coplanar:number}){
  return after.penetration<=before.penetration&&after.coplanar<=before.coplanar&&acceptCorrection(contactScore(before),contactScore(after))
 }
+
+// Fade a retained correction at both ends of the same leaf's trajectory.
+// The sewn root remains fixed by liftChunkChain's spatial envelope.
+export function turnCorrectionEnvelope(progress:number){
+ const p=Math.max(0,Math.min(1,progress))
+ return Math.sin(Math.PI*p)**2
+}
+export function correctionCandidates(previous:number,desired:number,limit:number){
+ const clamp=(v:number)=>Math.max(0,Math.min(limit,v))
+ const p=clamp(previous),d=clamp(desired)
+ return [...new Set((d>0?[p,(p+d)/2,d]:[p/2]).map(clamp))].filter(v=>v>1e-7)
+}
+export function nonWorseningContacts(before:{penetration:number;coplanar:number},after:{penetration:number;coplanar:number}){
+ return after.penetration<=before.penetration&&after.coplanar<=before.coplanar
+}
