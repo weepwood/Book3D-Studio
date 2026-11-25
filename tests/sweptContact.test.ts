@@ -13,3 +13,19 @@ it('separates persistent opposing support faces from moving penetration candidat
  expect(scanSweptTrees(prepareSweptMesh(a,a),prepareSweptMesh(b,b),64,['Back cover','Unread page block'])).toMatchObject({support:1,hits:0,uncertain:0})
  expect(scanSweptTrees(prepareSweptMesh(a,a),prepareSweptMesh(b,b),64,['other','other'])).toMatchObject({support:0,hits:1})
 })
+
+it('fixed-axis interval proof removes overlapping AABB uncertainty without erasing tunneling',()=>{
+ const a=t(0,0),b=new Triangle(new Vector3(1.25,2,0),new Vector3(2,1.25,0),new Vector3(2,2,0))
+ const moved=b.clone();for(const v of [moved.a,moved.b,moved.c])v.x-=.1
+ expect(sweptTriangleContact(a,a,b,moved,0,1e-6,false)).toBe('uncertain')
+ expect(sweptTriangleContact(a,a,b,moved,0)).toBe('clear')
+ expect(sweptTriangleContact(t(0,-1),t(0,1),t(0,0),t(0,0),0)).toBe('hit')
+ // Near contact cannot be certified from a projection gap below tolerance.
+ const near=new Triangle(new Vector3(1,1+1e-8,0),new Vector3(2,1+1e-8,0),new Vector3(1,2,0))
+ expect(sweptTriangleContact(a,a,near,near,0)).not.toBe('clear')
+})
+it('each swept pair is classified exactly once, including certified clear pairs',()=>{
+ const a=snap(0,0),b=snap(1.7,0)
+ const r=scanSweptMeshes(a,a,b,b)
+ expect(r.tested).toBe(r.hits+r.uncertain+r.support+r.touch+r.clear)
+})

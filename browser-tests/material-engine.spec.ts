@@ -8,6 +8,10 @@ test('材料预设、2000页双向翻动和缓存预算持续稳定',async({page
  await expect(host.locator('canvas')).toBeVisible({timeout:15000})
  if(hardware)await expect(host).toHaveAttribute('data-shader-warm','submitted',{timeout:15000})
  const shaderMs=hardware?Number(await host.getAttribute('data-shader-warm-ms')):null
+ await expect(host).toHaveAttribute('data-startup',/./)
+ const startup=JSON.parse((await host.getAttribute('data-startup'))!)
+ expect(Object.values(startup).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)).toBe(true)
+ expect(startup.firstSubmitMs).toBeGreaterThanOrEqual(startup.setupMs)
  const file=page.locator('input[type=file][accept=".json,application/json"]')
  await file.setInputFiles({name:'material.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,thicknessMode:'automatic',paperPhysics:'material',paperThickness:.1,pageCount:2000,pageIndex:50,pageDuration:.3}))})
  await expect(page.getByTestId('paper-material')).toBeVisible()
@@ -30,7 +34,7 @@ test('材料预设、2000页双向翻动和缓存预算持续稳定',async({page
  const surface=JSON.parse((await host.getAttribute('data-surface-quality'))!);expect(surface.leaf.samples).toBeGreaterThan(0);expect(surface.chunk.samples).toBeGreaterThan(0);expect(surface.leaf.invalid+surface.chunk.invalid+surface.handoff.invalid).toBe(0)
  const chunkHandoff=JSON.parse((await host.getAttribute('data-chunk-handoff-quality'))!);expect(chunkHandoff.commits).toBeGreaterThan(0);expect(Number.isFinite(chunkHandoff.maxMm)).toBe(true);expect(chunkHandoff.maxMm).toBeLessThan(.01);expect(chunkHandoff.invalid).toBe(0)
  const curve=JSON.parse((await host.getAttribute('data-curve-quality'))!);expect(curve.samples).toBeGreaterThan(0);expect(Object.values(curve).every(Number.isFinite)).toBe(true);expect(curve.maxRootError).toBeLessThan(1e-7);expect(curve.maxRelativeLengthError).toBeLessThan(.005)
- await writeFile(info.outputPath('material-engine.json'),JSON.stringify({shaderMs,samples,curve,surface,chunkHandoff,perf:JSON.parse((await host.getAttribute('data-perf'))!),renderer:await host.getAttribute('data-perf-renderer')},null,2))
+ await writeFile(info.outputPath('material-engine.json'),JSON.stringify({shaderMs,startup,samples,curve,surface,chunkHandoff,perf:JSON.parse((await host.getAttribute('data-perf'))!),renderer:await host.getAttribute('data-perf-renderer')},null,2))
  // A new project must not inherit the previous project's handoff samples.
  await page.locator('.left').getByRole('button',{name:/项目/}).click()
  await page.getByRole('button',{name:'复制',exact:true}).click()

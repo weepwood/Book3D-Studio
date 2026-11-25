@@ -169,7 +169,7 @@ test('设置分组重置、材质预设与跨页选择保留作品数据',async(
  await expect(host).toHaveAttribute('data-page-index','12')
 })
 
-test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testInfo)=>{
+for(const physics of ['legacy','material'] as const)test('真实厚块抓取、交接纸叶衰减及取消返回 '+physics,async({page},testInfo)=>{
  // Read pixels inside the same rAF as the actual WebGL draw, not after a
  // later Playwright screenshot command has allowed the overlay to disappear.
  await page.addInitScript(()=>{
@@ -181,7 +181,11 @@ test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testI
      }
    })
  })
- await page.goto('/?pick=1')
+ await page.goto('/?pick=1&surface=1')
+ if(physics==='material'){
+  await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({name:'material-handoff.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,thicknessMode:'automatic',paperPhysics:'material',paperThickness:.15,pageCount:40}))})
+  await expect(page.getByTestId('paper-material')).toBeVisible()
+ }
  await page.getByRole('button',{name:/内页/}).first().click()
  const count=page.getByRole('spinbutton',{name:'内页数量 数值'});await count.fill('40');await count.press('Enter')
  await page.getByRole('button',{name:/模型/}).click()
@@ -201,4 +205,8 @@ test('真实厚块抓取、交接纸叶衰减及取消返回',async({page},testI
  await page.mouse.move(point[0]-150,point[1],{steps:4});await expect(host).toHaveAttribute('data-chunk-handoff','false',{timeout:15000})
  await page.mouse.move(point[0]+15,point[1],{steps:4});await page.mouse.up()
  await expect(host).toHaveAttribute('data-chunk-phase','idle',{timeout:55000});await expect(host).toHaveAttribute('data-page-index','0')
+ const surface=JSON.parse((await host.getAttribute('data-surface-quality'))!)
+ expect(surface.handoff.samples).toBeGreaterThan(0);expect(surface.handoff.triangles).toBeGreaterThan(0)
+ expect(surface.handoff.invalid).toBe(0);expect(Number.isFinite(surface.handoff.maxAreaError)).toBe(true)
+ await writeFile(testInfo.outputPath('chunk-handoff-surface.json'),JSON.stringify(surface,null,2))
 })

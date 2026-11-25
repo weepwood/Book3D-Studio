@@ -283,13 +283,14 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     }
     return {opening:last,index:readingIndex,self,containment}
   }
+  const compareSweeps=new URLSearchParams(location.search).get('sweepCompare')==='1'
   let priorMotion:Map<string,MotionSnapshot>|null=null,priorMotionKey=''
   function resetSweptContacts(){priorMotion=null;priorMotionKey=''}
   function sweptCollisionSample(){
     const meshes=captureContactMeshes(),key=[readingIndex,...activeTurns.map(t=>[t.direction,t.span??1].join(':'))].join('|'),current=new Map<string,MotionSnapshot>()
     for(const m of meshes){const p=m.geometry.getAttribute('position');current.set(m.name,{positions:Float32Array.from(p.array),indices:m.geometry.index?Uint32Array.from(m.geometry.index.array):Uint32Array.from({length:p.count},(_,i)=>i),materials:Uint8Array.from({length:Math.floor((m.geometry.index?.count??p.count)/3)},(_,i)=>m.geometry.groups.find(g=>i*3>=g.start&&i*3<g.start+g.count)?.materialIndex??255)})}
     const previous=priorMotion;priorMotion=current;const stable=key===priorMotionKey;priorMotionKey=key
-    const pairs:{a:string;b:string;tested:number;hits:number;uncertain:number;complete:boolean;topologyChanged:boolean}[]=[]
+    const pairs:({a:string;b:string}&ReturnType<typeof scanSweptTrees>&{baseline?:ReturnType<typeof scanSweptTrees>})[]=[]
     if(!previous||!stable)return {reset:true,pairs}
     // Each temporal BVH is built at most once for this sample interval.
     // Raw swept hits include legitimate support contacts, not just defects.
@@ -298,7 +299,8 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     for(let i=0;i<meshes.length;i++)for(let j=i+1;j<meshes.length;j++){
       const a=meshes[i],b=meshes[j],support=/cover/i.test(a.name)&&/page block/i.test(b.name)||/cover/i.test(b.name)&&/page block/i.test(a.name)
       if(!a.active&&!b.active&&!support)continue
-      pairs.push({a:a.name,b:b.name,...scanSweptTrees(tree(a.name),tree(b.name),64,[a.name,b.name])})
+      const ta=tree(a.name),tb=tree(b.name),names:[string,string]=[a.name,b.name]
+      pairs.push({a:a.name,b:b.name,...scanSweptTrees(ta,tb,64,names),...(compareSweeps?{baseline:scanSweptTrees(ta,tb,64,names,false)}:{})})
     }
     return {reset:false,pairs}
   }

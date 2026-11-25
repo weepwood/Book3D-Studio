@@ -83,6 +83,7 @@ export class BookRuntime {
   private orbitMoving=false
   private contextLost=false
   private perf:RenderProbe|null=null
+  private startupProbe:{started:number;rendererMs:number;environmentMs:number;modelMs:number;setupMs:number}|null=null
   private meshProbeMode=new URLSearchParams(location.search).get('meshCollision')
   private meshProbeEnabled=this.meshProbeMode==='1'||this.meshProbeMode==='2'
   private meshProbeAt=-Infinity
@@ -139,8 +140,10 @@ export class BookRuntime {
   private disposed=false
   private reduced=window.matchMedia('(prefers-reduced-motion: reduce)')
   constructor(private host:HTMLElement,c:BookConfig,private onPageIndex?:(index:number)=>void,private onContextStatus?:(status:'lost'|'restored')=>void){
+    const startup=performance.now();let phase=startup
     this.config={...c};this.resetHandoffProbes(true);this.open=c.opening>=READ_ANGLE?180:c.opening;this.index=nextLeaf(0,c.pageIndex,leafCount(c))
     this.renderer=new T.WebGLRenderer({antialias:true,alpha:true})
+    const rendererMs=performance.now()-phase;phase=performance.now()
     if(new URLSearchParams(location.search).get('perf')==='1')this.perf=new RenderProbe(this.renderer.getContext() as WebGL2RenderingContext,host)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=T.PCFShadowMap
@@ -152,6 +155,7 @@ export class BookRuntime {
     const pmrem=new T.PMREMGenerator(this.renderer), room=new RoomEnvironment()
     this.environment=pmrem.fromScene(room,.04);this.scene.environment=this.environment.texture
     room.dispose();pmrem.dispose()
+    const environmentMs=performance.now()-phase
     this.camera.position.set(3,2,5)
     this.controls=new OrbitControls(this.camera,this.renderer.domElement)
     this.controls.enablePan=true;this.controls.minDistance=2;this.controls.maxDistance=15;this.controls.enableDamping=true;this.controls.dampingFactor=.12;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.zoomToCursor=true
@@ -162,7 +166,8 @@ export class BookRuntime {
     this.scene.add(this.light,this.fill,this.ambient)
     this.floor=new T.Mesh(new T.PlaneGeometry(30,30),new T.ShadowMaterial({opacity:.20}))
     this.floor.rotation.x=-Math.PI/2;this.floor.receiveShadow=true;this.scene.add(this.floor)
-    this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setReading(this.index,[]);this.scene.add(this.book.root)
+    phase=performance.now();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setReading(this.index,[]);this.scene.add(this.book.root)
+    const modelMs=performance.now()-phase
     this.resize=new ResizeObserver(this.onResize);this.resize.observe(host)
     this.renderer.domElement.addEventListener('pointermove',this.hover)
     this.renderer.domElement.addEventListener('pointerleave',this.leave)
@@ -173,6 +178,7 @@ export class BookRuntime {
     this.host.addEventListener('pointercancel',this.readPanEnd,true)
     this.host.addEventListener('lostpointercapture',this.readPanEnd,true)
     this.apply(c);this.onResize();this.fit();this.scheduleShaderWarm()
+    if(this.perf)this.startupProbe={started:startup,rendererMs,environmentMs,modelMs,setupMs:performance.now()-startup}
   }
   cancelInteraction(){
     this.cancelModeTransition();
@@ -268,7 +274,8 @@ export class BookRuntime {
     this.floor.visible=this.readPose<.5;this.scene.environmentIntensity=1-.8*this.readPose
     if(this.meshProbeMode==='4'&&(display.length||this.coverMotion)&&now-this.meshProbeAt>=500){this.meshProbeAt=now;this.host.dataset.triangleCorrection=JSON.stringify(this.book.resolveTriangleContacts())}
     this.updateReadingCamera(cameraDt,ready)
-    const shown=this.transitionCamera(dt);this.perf?.phase('camera');this.perf?.beginGpu();this.renderer.render(this.scene,shown);this.perf?.endGpu();this.perf?.phase('render');if(this.handoffProbeEnabled){
+    const shown=this.transitionCamera(dt);this.perf?.phase('camera');this.perf?.beginGpu();const firstRender=this.startupProbe?performance.now():0;this.renderer.render(this.scene,shown);this.perf?.endGpu();
+    if(this.startupProbe){const {started,...phases}=this.startupProbe;this.host.dataset.startup=JSON.stringify({...phases,firstRenderMs:performance.now()-firstRender,firstSubmitMs:performance.now()-started});this.startupProbe=null}this.perf?.phase('render');if(this.handoffProbeEnabled){
       const chunkPrevious=this.chunkHandoffPrevious;this.chunkHandoffPrevious=null
       if(chunkPrevious&&!display.length&&this.index===chunkPrevious.index+chunkPrevious.direction*chunkPrevious.span*chunkPrevious.goal){
         const destination=chunkPrevious.goal===1?chunkPrevious.direction:-chunkPrevious.direction as 1|-1

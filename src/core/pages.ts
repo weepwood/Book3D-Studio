@@ -62,16 +62,22 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
   }
   const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;texture.anisotropy=4;texture.userData.estimatedBytes=raster.estimatedBytes
   if(flip){texture.repeat.x=-1;texture.offset.x=1}
-  const own=canvas.cloneNode() as HTMLCanvasElement;context(own).drawImage(canvas,0,0,w,h)
+  const opposite=index%2===0?index+1:index-1
+  const hasBleed=index>=0&&index<c.pageCount&&opposite>=0&&opposite<c.pageCount&&c.pageBleed>0
+  const frontImage=c.pageImages[index],backImage=hasBleed?c.pageImages[opposite]:undefined
+  // An immutable synthetic page can be composited directly. Retain a
+  // pristine base only when asynchronous image decoding can trigger a
+  // second blend; otherwise duplicate backing canvases are unnecessary.
+  const own=hasBleed&&(frontImage||backImage)?canvas.cloneNode() as HTMLCanvasElement:null
+  if(own)context(own).drawImage(canvas,0,0,w,h)
   let reverse:HTMLCanvasElement|null=null
-  const redraw=()=>{if(texture.userData.disposed)return;ctx.clearRect(0,0,w,h);ctx.drawImage(own,0,0,w,h);if(reverse&&c.pageBleed>0){ctx.save();ctx.globalAlpha=c.pageBleed;ctx.globalCompositeOperation='multiply';ctx.translate(w,0);ctx.scale(-1,1);ctx.drawImage(reverse,0,0,w,h);ctx.restore()}texture.needsUpdate=true;invalidate()}
+  const redraw=()=>{if(texture.userData.disposed)return;if(own){ctx.clearRect(0,0,w,h);ctx.drawImage(own,0,0,w,h)}if(reverse&&c.pageBleed>0){ctx.save();ctx.globalAlpha=c.pageBleed;ctx.globalCompositeOperation='multiply';ctx.translate(w,0);ctx.scale(-1,1);ctx.drawImage(reverse,0,0,w,h);ctx.restore()}texture.needsUpdate=true;invalidate()}
   texture.userData.pending=0
   const load=(url:string,done:(im:HTMLImageElement)=>void)=>{const im=new Image();texture.userData.pending++;const finish=()=>{texture.userData.pending--;if(!texture.userData.disposed)invalidate()};im.onload=()=>{try{if(!texture.userData.disposed)done(im)}finally{finish()}};im.onerror=finish;im.src=url}
   const paint=(target:HTMLCanvasElement,im:HTMLImageElement,bg:string)=>{const g=context(target);g.fillStyle=bg;g.fillRect(0,0,w,h);const q=Math.min(w/im.width,h/im.height);g.drawImage(im,(w-im.width*q)/2,(h-im.height*q)/2,im.width*q,im.height*q)}
-  if(c.pageImages[index])load(c.pageImages[index],im=>{paint(own,im,c.paperColor);redraw()})
-  const opposite=index%2===0?index+1:index-1
-  if(index>=0&&index<c.pageCount&&opposite>=0&&opposite<c.pageCount&&c.pageBleed>0){
-    reverse=canvas.cloneNode() as HTMLCanvasElement;const g=context(reverse);g.fillStyle='#ffffff';g.fillRect(0,0,w,h);g.fillStyle='#302e28';g.font='24px Georgia';const text=passages[Math.floor(opposite/2)%passages.length][2];let line='',y=h*.34;for(const word of (text+' '+text).split(' ')){const next=line?line+' '+word:word;if(g.measureText(next).width>w-96){if(y>h-90)break;g.fillText(line,48,y);y+=34;line=word}else line=next}if(line&&y<=h-90)g.fillText(line,48,y);redraw();if(c.pageImages[opposite])load(c.pageImages[opposite],im=>{if(reverse){paint(reverse,im,'#ffffff');redraw()}})
+  if(frontImage)load(frontImage,im=>{paint(own??canvas,im,c.paperColor);redraw()})
+  if(hasBleed){
+    reverse=canvas.cloneNode() as HTMLCanvasElement;const g=context(reverse);g.fillStyle='#ffffff';g.fillRect(0,0,w,h);g.fillStyle='#302e28';g.font='24px Georgia';const text=passages[Math.floor(opposite/2)%passages.length][2];let line='',y=h*.34;for(const word of (text+' '+text).split(' ')){const next=line?line+' '+word:word;if(g.measureText(next).width>w-96){if(y>h-90)break;g.fillText(line,48,y);y+=34;line=word}else line=next}if(line&&y<=h-90)g.fillText(line,48,y);redraw();if(backImage)load(backImage,im=>{if(reverse){paint(reverse,im,'#ffffff');redraw()}})
   }
   return texture
 }
