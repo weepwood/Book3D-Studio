@@ -34,3 +34,16 @@ export function releaseGesture(target:number,velocity:number,distance:number,reg
  if(distance<5&&!regrab)return false
  return p>=.62||latched&&p>=.28&&predicted>=.23||predicted>=.38&&p>=.12
 }
+
+// Filter sample velocity, but do not let an old forward fling survive a
+// deliberate reversal. A late pointer-up coordinate is evidence as well.
+export function sampleDragVelocity(previous:number,from:number,to:number,dt:number){
+ const delta=to-from,v=delta/Math.max(.008,dt)
+ if(Math.abs(delta)>.008&&previous*v<0)return clamp(v,-4,4)
+ return clamp(.65*previous+.35*v,-4,4)
+}
+export function releaseDragVelocity(previous:number,from:number,to:number,elapsedMs:number){
+ if(!Number.isFinite(elapsedMs)||elapsedMs>120)return 0
+ if(Math.abs(to-from)>.003)return sampleDragVelocity(previous,from,to,Math.max(8,elapsedMs)/1000)
+ return clamp(previous,-4,4)
+}

@@ -9,7 +9,7 @@ import {PRESS_SCENE} from './referenceScene'
 import {applyPaperShading} from './paperShading'
 import {paperEdgeTexture} from './paperEdge'
 import {pageRaster,textureEvictions,PAGE_TEXTURE_BUDGET} from './textureBudget'
-import {createPageDecodeQueue,decodePageImage,type DecodedPage} from './pageDecode'
+import {createPageDecodeQueue,decodePageImage,decodePageBitmap,type DecodedPage} from './pageDecode'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -137,7 +137,8 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   const capacity=24
   const raster=pageRaster(c.width,c.height),decodeBudget=8*1024*1024
   const decodedCacheEnabled=new URLSearchParams(location.search).get('decodedCache')!=='0'
-  const decoder=createPageDecodeQueue(url=>decodePageImage(url,raster.width,raster.height),2,decodedCacheEnabled?decodeBudget:0)
+  const bitmapDecoder=new URLSearchParams(location.search).get('pageDecoder')==='bitmap'&&typeof createImageBitmap==='function'
+  const decoder=createPageDecodeQueue(url=>bitmapDecoder?decodePageBitmap(url,raster.width,raster.height):decodePageImage(url,raster.width,raster.height),2,decodedCacheEnabled?decodeBudget:0)
   const reservedDecodeBytes=()=>decodedCacheEnabled&&config.pageImages.length?decodeBudget:0
   const warmQueue=new Set<T.Texture>()
   let backgroundPaused=false,priorityPauses=0,priorityResumes=0
@@ -271,5 +272,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   }
   function pauseBackground(){if(disposed||backgroundPaused)return;backgroundPaused=true;priorityPauses++;cancelPool();cancelPreload();cancelWarmHandle();preloadKey=''}
   function resumeBackground(){if(disposed||!backgroundPaused)return;backgroundPaused=false;priorityResumes++;if(preloadPlan)preload(preloadPlan.index,preloadPlan.count,preloadPlan.direction);if(poolWanted)preparePool();scheduleWarm()}
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,pauseBackground,resumeBackground,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({priorityPauses,priorityResumes,backgroundPaused,sharedFaces,aliases:aliases.size,aliasHits,lastDirection,reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,pauseBackground,resumeBackground,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({decoderMode:bitmapDecoder?"bitmap":"image",priorityPauses,priorityResumes,backgroundPaused,sharedFaces,aliases:aliases.size,aliasHits,lastDirection,reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }

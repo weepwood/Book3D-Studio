@@ -14,10 +14,10 @@ import {physicalBook} from './physicalBook'
 import {paperMaterial} from './paperMaterial'
 import {curlTarget} from './pageChain'
 import {referenceDragProgress} from './pressReference'
-import {TurnInput,releaseGesture,gestureIntent} from './turnInput'
+import {TurnInput,releaseGesture,gestureIntent,sampleDragVelocity} from './turnInput'
 import {desiredBatch,orderedProgress,openingLeaves,OPENING_DROP_MS,STACK_SETTLE_MS,activeSpan} from './pageWindow'
 import {RenderProbe} from './renderProbe'
-import {RenderBudget,renderProfileLevel} from './renderBudget'
+import {RenderBudget,renderProfileLevel,readRenderProfile,type RenderProfile} from './renderBudget'
 import {observePrograms} from './programWarm'
 import {PRESS_SCENE,coverProgress,presentationStep,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 const SETTLED_DROP=PRESS_SCENE.openDelayMs+STACK_SETTLE_MS
@@ -29,7 +29,8 @@ export class BookRuntime {
   // Opt-in experiment until device measurements establish a safe default.
   private shaderWarmEnabled=new URLSearchParams(location.search).get('prewarm')==='1'
   private renderBudget=new RenderBudget()
-  private fixedProfile=renderProfileLevel(new URLSearchParams(location.search).get('renderProfile'))
+  private fixedProfile=renderProfileLevel(readRenderProfile())
+  private profilePending=false
   private adaptiveRendering=this.fixedProfile===0&&new URLSearchParams(location.search).get('renderBudget')==='1'
   private inputPriority=new URLSearchParams(location.search).get('inputPriority')!=='0'
   private backgroundDeferred=false
@@ -226,7 +227,7 @@ export class BookRuntime {
     this.controls.enablePan=true;this.controls.minDistance=2;this.controls.maxDistance=15;this.controls.enableDamping=true;this.controls.dampingFactor=.12;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.zoomToCursor=true
     this.controls.addEventListener('change',this.invalidate);this.controls.addEventListener('start',this.cancelOrbitTransition);this.controls.addEventListener('start',this.cancelModeTransition)
     this.light.position.set(-3,5,5);this.light.castShadow=true
-    const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.fullShadowSize=size;this.light.shadow.mapSize.set(size,size);this.applyRenderBudget(this.fixedProfile)
+    const size=host.clientWidth<640?PRESS_SCENE.mobileShadowMap:PRESS_SCENE.shadowMap;this.fullShadowSize=size;this.light.shadow.mapSize.set(size,size);this.applyRenderBudget(this.fixedProfile);this.host.dataset.renderProfile=String(this.fixedProfile);this.host.dataset.renderProfilePending='false'
     Object.assign(this.light.shadow.camera,{left:-5,right:5,top:5,bottom:-5,far:20})
     this.scene.add(this.light,this.fill,this.ambient)
     this.floor=new T.Mesh(new T.PlaneGeometry(30,30),new T.ShadowMaterial({opacity:.20}))
@@ -256,6 +257,14 @@ export class BookRuntime {
   }
   private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.backgroundDeferred=false;this.firstCommandAt=null;this.firstCommandContext=null;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.cancelShaderWarm();this.book.suspendTextureWork();this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
+  setRenderProfile(profile:RenderProfile){
+    if(this.disposed||this.contextLost)return
+    this.fixedProfile=renderProfileLevel(profile);this.adaptiveRendering=false;this.renderBudget.reset()
+    this.profilePending=this.appliedBudget!==this.fixedProfile
+    this.host.dataset.renderProfile=String(this.fixedProfile)
+    this.host.dataset.renderProfilePending=String(this.profilePending)
+    this.invalidate()
+  }
   private applyRenderBudget(level:number){
     if(this.appliedBudget===level)return
     this.appliedBudget=level;this.shadowDirty=true
@@ -357,6 +366,9 @@ export class BookRuntime {
     this.updateReadingCamera(cameraDt,ready)
     const shown=this.transitionCamera(dt)
     const moving=!!this.turn&&!this.turn.preview||!!this.coverMotion||drop.length>0
+    if(this.profilePending&&!moving&&!this.dragging&&this.dropElapsed>=SETTLED_DROP){
+      this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false'
+    }
     if(this.adaptiveRendering)this.applyRenderBudget(moving?this.renderBudget.level:0)
     this.perf?.phase('camera')
     // The settled book's world-space shadow is independent of camera zoom/pan.
@@ -461,7 +473,7 @@ export class BookRuntime {
   switchProject(c:BookConfig){
     // A project change is not a page-turn command. Reset transient state
     // before applying the new model, while retaining the WebGL renderer.
-    this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
+    this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false';this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
     this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
     this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
     this.savedReading=null;this.cancelOrbitTransition();this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
@@ -630,7 +642,7 @@ export class BookRuntime {
       }else{this.touchMode='pan';p.view={...this.readingView};this.readingTarget={...this.readingView};this.cameraMoving=false;this.readingVelocity={zoom:0,x:0,y:0}}
     }
     if(this.touchMode==='page'&&p.direction){
-      const next=clamp01((p.progress??0)+referenceDragProgress(-dx*p.direction,bounds.width,true));const before=clamp01((p.progress??0)+referenceDragProgress(p.distance??0,bounds.width,true));p.velocityX=.65*p.velocityX+.35*(next-before)/Math.max(.008,(time-p.time)/1000);p.time=time;p.distance=-dx*p.direction;this.dragPage(next,p.velocityX)
+      const next=clamp01((p.progress??0)+referenceDragProgress(-dx*p.direction,bounds.width,true));const before=clamp01((p.progress??0)+referenceDragProgress(p.distance??0,bounds.width,true));p.velocityX=sampleDragVelocity(p.velocityX,before,next,Math.max(.008,(time-p.time)/1000));p.time=time;p.distance=-dx*p.direction;this.dragPage(next,p.velocityX)
     }else if(this.touchMode==='pan'){
       const lim=panLimits(bounds,p.view.zoom)
       this.readingView={zoom:p.view.zoom,x:rubber(p.view.x+dx,lim.minX,lim.maxX,bounds.width,PRESS_SCENE.panRubber),y:rubber(p.view.y+dy,lim.minY,lim.maxY,bounds.height,PRESS_SCENE.panRubber)}

@@ -16,18 +16,18 @@ try{
    const page=await context.newPage(),errors=[]
    page.on('pageerror',e=>errors.push(e.message))
    await page.addInitScript(c=>localStorage.setItem('book3d.config',JSON.stringify(c)),config)
-   await page.goto(url+'/?perf=1')
+   const target=new URL(url);target.searchParams.set('perf','1');await page.goto(target.href)
    await page.waitForFunction(()=>document.querySelector('.canvas-host')?.dataset.pageReady==='true',{},{timeout:30000})
    const cdp=await context.newCDPSession(page)
-   const checkpoint=async()=>{
+   const checkpoint=async(inspectDetached=false)=>{
     await page.waitForFunction(()=>{const c=JSON.parse(document.querySelector('.canvas-host').dataset.textureCache);return c.pendingTextures+c.decode.active+c.decode.queued+c.warmQueued===0},{},{timeout:20000})
     await cdp.send('HeapProfiler.collectGarbage');await page.waitForTimeout(100);await cdp.send('HeapProfiler.collectGarbage')
     const heap=await cdp.send('Runtime.getHeapUsage'),dom=await cdp.send('Memory.getDOMCounters')
     let detached
     try{
-     const result=await cdp.send('DOM.getDetachedDomNodes')
+     if(inspectDetached){const result=await cdp.send('DOM.getDetachedDomNodes')
      const byName={};for(const item of result.detachedNodes??[]){const name=item.treeNode.nodeName;byName[name]=(byName[name]??0)+1}
-     detached={trees:result.detachedNodes?.length??0,byName}
+     detached={trees:result.detachedNodes?.length??0,byName}}
     }catch(e){detached={unavailable:String(e)}}
     const data=await page.evaluate(()=>{const d=document.querySelector('.canvas-host').dataset;return {connected:document.querySelectorAll('*').length,cache:JSON.parse(d.textureCache),resources:JSON.parse(d.renderResources)}})
     return {heap,dom,detached,...data}
@@ -38,7 +38,7 @@ try{
      for(let i=0;i<10;i++){await page.keyboard.press(key);await page.waitForTimeout(80)}
      await page.waitForFunction(n=>{const d=document.querySelector('.canvas-host').dataset;return Number(d.pageIndex)===n&&d.pageTurn==='idle'},target,{timeout:30000})
     }
-    checkpoints.push(await checkpoint())
+    checkpoints.push(await checkpoint(cycle===2))
    }
    results.push({url,errors,checkpoints})
   }finally{await context.close()}

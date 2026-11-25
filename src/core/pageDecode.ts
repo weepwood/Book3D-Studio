@@ -59,20 +59,40 @@ export function createPageDecodeQueue(decode:(url:string)=>Promise<DecodedPage>,
  function dispose(){closed=true;clearCache();if(timer!==null)clearTimeout(timer);timer=null;for(const j of jobs.values()){canceled+=j.listeners.size;j.listeners.clear()}jobs.clear()}
  return {request,dispose,clearCache,metrics:()=>({cacheBytes,peakCacheBytes,cacheHits,cacheEvictions,cacheBudget:budget,active,peakActive,queued:[...jobs.values()].filter(j=>!j.running).length,requested,shared,started,completed,failed,deliveryFailed,canceled,decodeMs,peakDecodeMs,limit})}
 }
+function retainedBitmap(bitmap:ImageBitmap,width:number,height:number):DecodedPage{
+ return {source:bitmap,width,height,retainedBytes:bitmap.width*bitmap.height*4,close:()=>bitmap.close()}
+}
+export async function decodePageBitmap(url:string,maxWidth:number,maxHeight:number):Promise<DecodedPage>{
+ // Only validated embedded image data is accepted; no external requests.
+ if(!/^data:image\/(png|jpeg|webp);base64,/.test(url))throw Error('unsupported page image')
+ const blob=await (await fetch(url)).blob()
+ const original=await createImageBitmap(blob)
+ const width=original.width,height=original.height
+ const scale=Math.min(1,maxWidth/width,maxHeight/height)
+ if(scale>=1)return retainedBitmap(original,width,height)
+ try{
+  const bitmap=await createImageBitmap(original,{resizeWidth:Math.max(1,Math.round(width*scale)),resizeHeight:Math.max(1,Math.round(height*scale)),resizeQuality:'high'})
+  return retainedBitmap(bitmap,width,height)
+ }finally{original.close()}
+}
 export async function decodePageImage(url:string,maxWidth:number,maxHeight:number):Promise<DecodedPage>{
  const image=new Image()
- if(typeof image.decode==='function'){image.src=url;await image.decode()}
- else await new Promise<void>((resolve,reject)=>{image.onload=()=>resolve();image.onerror=()=>reject(Error('page decode failed'));image.src=url})
- const width=image.naturalWidth,height=image.naturalHeight
- if(!width||!height)throw Error('empty page image')
- const scale=Math.min(1,maxWidth/width,maxHeight/height)
- // Bound the intermediate raster to the paper texture dimensions; preserve
- // original aspect ratio in the compositor, including rounding at edges.
- if(scale<1&&typeof createImageBitmap==='function'){
-  try{
-   const bitmap=await createImageBitmap(image,{resizeWidth:Math.max(1,Math.round(width*scale)),resizeHeight:Math.max(1,Math.round(height*scale)),resizeQuality:'high'})
-   image.removeAttribute('src');return {source:bitmap,width,height,retainedBytes:bitmap.width*bitmap.height*4,close:()=>bitmap.close()}
-  }catch{/* Older engines can still draw the decoded image directly. */}
- }
- return {source:image,width,height,close:()=>{image.removeAttribute('src')}}
+ const release=()=>{image.onload=null;image.onerror=null;image.removeAttribute('src')}
+ let transferred=false
+ try{
+  if(typeof image.decode==='function'){image.src=url;await image.decode()}
+  else await new Promise<void>((resolve,reject)=>{image.onload=()=>resolve();image.onerror=()=>reject(Error('page decode failed'));image.src=url})
+  image.onload=null;image.onerror=null
+  const width=image.naturalWidth,height=image.naturalHeight
+  if(!width||!height)throw Error('empty page image')
+  const scale=Math.min(1,maxWidth/width,maxHeight/height)
+  if(scale<1&&typeof createImageBitmap==='function'){
+   try{
+    const bitmap=await createImageBitmap(image,{resizeWidth:Math.max(1,Math.round(width*scale)),resizeHeight:Math.max(1,Math.round(height*scale)),resizeQuality:'high'})
+    return retainedBitmap(bitmap,width,height)
+   }catch{/* Older engines can still draw the decoded image directly. */}
+  }
+  transferred=true
+  return {source:image,width,height,close:release}
+ }finally{if(!transferred)release()}
 }

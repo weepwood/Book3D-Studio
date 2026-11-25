@@ -21,3 +21,9 @@ it('only explicit known fixed profiles may lower rendering quality',async()=>{
  expect(renderProfileLevel('balanced')).toBe(1);expect(renderProfileLevel('economy')).toBe(2)
  for(const x of [null,'full','invalid','constructor','__proto__'])expect(renderProfileLevel(x)).toBe(0)
 })
+
+it('validates stored and URL rendering preferences without coercion',async()=>{
+ const {parseRenderProfile}=await import('../src/core/renderBudget')
+ expect(parseRenderProfile('full')).toBe('full');expect(parseRenderProfile('economy')).toBe('economy')
+ for(const value of [null,undefined,0,{},'constructor','__proto__','invalid'])expect(parseRenderProfile(value)).toBeNull()
+})

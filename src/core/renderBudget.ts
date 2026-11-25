@@ -21,3 +21,17 @@ export class RenderBudget {
 }
 
 export function renderProfileLevel(profile:string|null){return profile==='balanced'?1:profile==='economy'?2:0}
+
+export type RenderProfile='full'|'balanced'|'economy'
+export const RENDER_PROFILE_KEY='book3d.renderProfile'
+export function parseRenderProfile(value:unknown):RenderProfile|null{return value==='full'||value==='balanced'||value==='economy'?value:null}
+export function readRenderProfile():RenderProfile{
+ const query=parseRenderProfile(new URLSearchParams(location.search).get('renderProfile'))
+ if(query)return query
+ try{return parseRenderProfile(localStorage.getItem(RENDER_PROFILE_KEY))??'full'}catch{return 'full'}
+}
+export function saveRenderProfile(profile:RenderProfile){
+ try{localStorage.setItem(RENDER_PROFILE_KEY,profile)}catch{/* Preview remains usable without storage. */}
+ // An explicit UI choice supersedes a diagnostic URL override.
+ try{const url=new URL(location.href);if(url.searchParams.has('renderProfile')){url.searchParams.delete('renderProfile');history.replaceState(history.state,'',url)}}catch{}
+}

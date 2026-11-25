@@ -162,3 +162,7 @@ Desktop Commander 恢复连接。#19 d81a1af、#20 0bbacd6 最新五项检查均
 - V0.9 第十七轮（同一PR #27，基线2c1bd24八项CI全绿）：固定renderProfile=balanced/economy预览倍率.75/.5、阴影1024/512（默认full、非动态，PNG全质并恢复），M4/SwiftShader两轮三档位同轮814×716导出RGBA差异0，逐叶端点与CSS尺寸不变。软件首翻full3333/2371→economy2449/2238ms但首次运动334/413ms未稳定改善，M4约890–916ms，不自动降质。首次输入暂停后台预取/池/空闲上传首帧后恢复，?inputPriority=0回退；事件timeStamp诊断。perf活动100ms发布、每帧采样、输入/idle即发，240次高清A/B发布839/839→170/837、堆增长近似。开发及生产各60次同协议确认离屏Canvas/IMG增长，连接DOM不变；合成完清理临时画布及取消闭包，淘汰后释放共享source，复测dev Canvas168→60、prod150→60、prod nodes1236→1146、heap8.53→8.49MB、IMG77不变，GPU9/34/16不变；CDP可能保留句柄，不认证无泄漏。166单测/类型/构建，初版软件6上下文及M4八项，最终M4六项通过。证据docs/benchmarks/v0.9-fixed-render-lifecycle-m4.json；固定档位纳入CI，诊断/heap手动。未独立量化首帧优先收益、未实现档位UI、未定位IMG保留、未实测Windows GPU；下一轮聚焦真实冷启动与图像生命周期，勿提前合并或改正式版本。
 
 - 第十七轮补充：最终SwiftShader共享纹理/合成2/2通过，真实source解除引用及GPU释放门禁；所有修改集中提交。
+
+- V0.9 第十八轮（PR #27，基线cae704c）：场景复用SelectField正式加入本机渲染质量偏好，URL显式参数初始化优先、UI选择覆盖并持久化，运动/沉降结束后应用，项目JSON独立、PNG全尺寸恢复；M4真实活动帧610px保持、落页407px、814×716导出及刷新验收通过。鼠标/笔pointerId隔离取消、反向速度重采样、最终释放位置与120ms惯性过期；初版先限幅再平滑导致短触控滑动回归，改为平滑后限幅且明确反向直接限幅，原门禁不放宽，最终M4六项通过。默认Image清除src及事件，实验?pageDecoder=bitmap直接Blob解码+缩放+关闭中间位图；六组像素五组一致、小JPEG平均差0.093/max12，首次小PNG位图149.6ms，暂不默认替换（ICC/EXIF及冷启动待证）。生产各60次阅读，DOM Image694→1100、Bitmap628→638稳定，末端IMG35→0/CANVAS26不变/连接DOM276不变/GPU9/34/16不变，堆8.488→8.498MB未明显改善；77解码累计1794→1649ms。末次才查询detached，避免调试句柄干扰。168单测/类型/构建，最终M4 6/6；证据docs/benchmarks/v0.9-profile-decode-gesture-m4.json，新UI门禁纳入CI。不提前合并，未实测Windows GPU、不宣称解决真实冷启动或长时泄漏。
+
+- 第十八轮补充：最终SwiftShader六项通过，原触控短滑动门禁恢复；本轮集中提交并保持正式版本不变。
