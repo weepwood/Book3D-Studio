@@ -169,7 +169,11 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
     // The lining is an interior component, not a second exterior spine.
     // At small openings it is enclosed by the covers and paper block.
     innerBinding.visible=deg>=35
-    const frontAngles=coverBoneAngles(supportedCoverFlex(pose.bone*(BONE_COUNT-1),pageWidth,leftDepth)),rearAngles=coverBoneAngles(supportedCoverFlex(-pose.bone*(BONE_COUNT-1)*.25,pageWidth,pageDepth-leftDepth))
+    const frontAngles=coverBoneAngles(supportedCoverFlex(pose.bone*(BONE_COUNT-1),pageWidth,leftDepth))
+    // Skinning can protrude the inner face near the sewn root even during
+    // outward bending. Keep the supported rear board planar, with a smooth
+    // transition as the final leaves leave it. Preserve the block thickness.
+    const rearAngles=coverBoneAngles(supportedCoverFlex(-pose.bone*(BONE_COUNT-1)*.25,pageWidth,pageDepth-leftDepth)*(1-T.MathUtils.smoothstep(pageDepth-leftDepth,0,.002)))
     rig.bones.forEach((bone,i)=>{bone.rotation.y=frontAngles[i]});rearRig.bones.forEach((bone,i)=>{bone.rotation.y=rearAngles[i]})
     refreshPages();root.updateMatrixWorld(true);for(const cover of [rig.mesh,back]){cover.computeBoundingSphere();cover.computeBoundingBox()}
   }
@@ -241,7 +245,7 @@ export function createBook(c:BookConfig, invalidate:()=>void,warm?:(texture:T.Te
       if(a===b||!a.geometry.boundingBox!.intersectsBox(b.geometry.boundingBox!))continue
       containment.push({outer:a.name,inner:b.name,...containmentProbe(a.geometry,a.tree!,b.geometry,64)})
     }
-    return {self,containment}
+    return {opening:last,index:readingIndex,self,containment}
   }
   let priorMotion:Map<string,MotionSnapshot>|null=null,priorMotionKey=''
   function resetSweptContacts(){priorMotion=null;priorMotionKey=''}

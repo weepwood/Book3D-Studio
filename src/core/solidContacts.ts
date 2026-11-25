@@ -19,18 +19,19 @@ export function pointInSolid(tree:MeshBVH,point:T.Vector3):'inside'|'outside'|'u
  return votes.every(v=>v===1)?'inside':votes.every(v=>v===0)?'outside':'uncertain'
 }
 export function containmentProbe(outer:T.BufferGeometry,tree:MeshBVH,inner:T.BufferGeometry,budget=64){
- if(!weldedTopology(outer).closed)return {status:'open' as const,tested:0,inside:0,uncertain:0,complete:false}
- const p=inner.getAttribute('position'),stride=Math.max(1,Math.ceil(p.count/Math.max(1,budget)));let tested=0,inside=0,uncertain=0
- for(let i=0;i<p.count;i+=stride){const state=pointInSolid(tree,new T.Vector3().fromBufferAttribute(p,i));tested++;if(state==='inside')inside++;else if(state==='uncertain')uncertain++}
- return {status:inside?'inside' as const:uncertain?'uncertain' as const:'outside' as const,tested,inside,uncertain,complete:stride===1}
+ if(!weldedTopology(outer).closed)return {status:'open' as const,tested:0,inside:0,uncertain:0,complete:false,maxDepth:0,examples:[] as {point:number[];depth:number}[]}
+ const p=inner.getAttribute('position'),stride=Math.max(1,Math.ceil(p.count/Math.max(1,budget)));let tested=0,inside=0,uncertain=0,maxDepth=0;const examples:{point:number[];depth:number}[]=[]
+ for(let i=0;i<p.count;i+=stride){const point=new T.Vector3().fromBufferAttribute(p,i),state=pointInSolid(tree,point);tested++;if(state==='inside'){inside++;const depth=tree.closestPointToPoint(point)?.distance??0;maxDepth=Math.max(maxDepth,depth);if(examples.length<16)examples.push({point:point.toArray(),depth})}else if(state==='uncertain')uncertain++}
+ return {status:inside?'inside' as const:uncertain?'uncertain' as const:'outside' as const,tested,inside,uncertain,complete:stride===1,maxDepth,examples}
 }
-// Adjacent faces share welded topological vertices and are excluded from
+// Adjacent faces share original index vertices and are excluded from
 // this nonadjacent self-intersection probe. Adjacent foldovers remain untested.
 export function selfContactProbe(g:T.BufferGeometry,tree:IndexBVH,budget=4096){
- const {faces}=weldedTopology(g);let tested=0,penetration=0,coplanar=0,complete=true
+ const count=g.index?.count??g.getAttribute('position').count,faces=Array.from({length:Math.floor(count/3)},(_,i)=>[0,1,2].map(j=>g.index?.getX(i*3+j)??i*3+j));let tested=0,penetration=0,coplanar=0,complete=true;const boxA=new T.Box3(),boxB=new T.Box3()
  tree.bvhcast(tree,new T.Matrix4(),{intersectsTriangles(a,b,i,j){
  const x=tree.resolveTriangleIndex(i),y=tree.resolveTriangleIndex(j)
  if(x>=y||faces[x].some(v=>faces[y].includes(v)))return false
+ if(!boxA.setFromPoints([a.a,a.b,a.c]).expandByScalar(eps).intersectsBox(boxB.setFromPoints([b.a,b.b,b.c])))return false
  if(tested>=budget){complete=false;return true}
  tested++;const kind=triangleContact(a,b,eps);if(kind==='penetration')penetration++;else if(kind==='coplanar')coplanar++;return false
  }})
