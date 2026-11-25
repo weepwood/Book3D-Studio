@@ -294,3 +294,10 @@ PR #27 的 d9008d5 已通过 quick/capture/matched/triangle-contact/workspace，
 170单测、类型检查、生产构建通过；初始软件三组成对draw-audit、M4七项（六上下文对照、cover生命周期、素材导入导出、原120次输入）通过。新cover-lifecycle纳入reader UI CI；draw-audit为手动诊断/对照门禁。原始证据docs/benchmarks/v0.9-draw-audit-cover-m4.json。后续优先普通depth变体首次创建与实际用户设备复现，保留真实Windows/Safari/长期内存及全PR逐行审查为未验收，不提前合并。
 
 最终默认匹配预热路径SwiftShader 6/6通过（1.9分钟），新旧814×716落页RGBA截图全部通道一致（mean/max/changed=0），活动叶首次阴影新增program旧1/新0，cover释放、静止阴影缓存、连续输入、反向/拖动、低帧率及资源边界回归通过。最终170单测/类型/构建通过。未单独认证匹配预热活动中的逐像素等价；M4专项在默认切换之前明确开启匹配完成对照。
+
+## 第二十一轮：普通深度材质变体与高DPI生命周期
+基线ff80e14，PR #27目标feat/v0.9-reading。扩展DrawAudit记录实际新增program的对象名称、蒙皮标志、side、map及缓存键。确证剩余两个首次阴影program来自Unread page block（普通网格、mapped、BackSide）与Front cover（蒙皮、unmapped、BackSide）。新增?stockDepthWarm=1实验：仅PCF、已有directional shadow target、未开启局部裁剪的普通不透明可见caster；按蒙皮/side/map channel去重，最多8个，实际6个。借用几何而不分配新几何，不改变原物体和材质，代理Mesh/SkinnedMesh仅compile，finally恢复target，编译后清空map引用，项目切换/重建/context loss/dispose释放自有材质。未增加绘制或GPU同步等待。单测覆盖去重、跳过隐藏/alpha、原材质不变、释放幂等及无target回退。
+SwiftShader三组成对OFF首次运动345.5/415.8/1434.1ms→ON459.1/429.9/531.1ms，中位415.8→459.1ms；首次阴影CPU中位318.2→152.2ms；首次翻页总中位3356.8→2166.4ms但波动显著。M4 OFF32.6/35.9/30.5→ON34.3/35.8/31.2ms，中位32.6→34.3ms；首次阴影CPU中位5.4→1.8ms，首次翻页总885.5→893.8ms。两类渲染器首次普通depth新增program均2→0，三组各814×716落页RGBA全通道差0。代表编译约1.3→2.3ms；共享GPU/驱动缓存，样本小，不能证明稳定首运动收益，不默认启用stockDepthWarm。保留上一轮活动叶匹配默认预热与原物理/画质。
+高DPI新增resolution media query重订阅、window resize及每次draw前DPR校验，仅比例实际变化时setPixelRatio；销毁移除监听，不引入持续轮询。初版测试错误期待DPR2导出CSS尺寸，实际遵循已有完整DPR导出合同，修正预期；CDP单独改变DPR未触发媒体查询事件，追加真实输入后draw比例校验，未宣称静止时模拟事件自动通知或实体跨屏已验收。真实M4浏览器DPR2均衡1221×1074→经济814×716，窗口调整974×566、模型重建同尺寸，PNG1948×1132、还原经济档；CDP DPR1.25后真实翻页调整608×353，WEBGL_lose_context恢复同尺寸/当前跨页，继续翻页至13，无pageerror。新增high-dpi-lifecycle.spec.ts纳入UI CI。最终172单测/类型/构建，M4三组普通depth对照及最终视口4/4通过，软件三组对照通过；初版高DPI失败两次（导出预期、模拟DPR事件），最终硬件原验收通过。数据docs/benchmarks/v0.9-stock-depth-hidpi-m4.json。实际用户严重首次卡顿、Windows实体GPU/跨屏、长期内存、累计全PR逐行审查仍未认证，不提前合并发布；原正式版本及并行工作区不动。
+
+最终SwiftShader 2/2通过（41.6秒），覆盖原活动叶匹配预热及DPR2→1.25、图形上下文恢复与完整DPR导出；172单测、类型及生产构建通过。

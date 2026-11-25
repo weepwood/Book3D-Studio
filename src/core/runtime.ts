@@ -20,6 +20,7 @@ import {RenderProbe} from './renderProbe'
 import {RenderBudget,renderProfileLevel,readRenderProfile,type RenderProfile} from './renderBudget'
 import {observePrograms} from './programWarm'
 import {DrawAudit} from './drawAudit'
+import {StockDepthWarm} from './stockDepthWarm'
 import {PRESS_SCENE,coverProgress,presentationStep,brakeRetention,isBrakeable,READING_POSE_ADAPTER} from './referenceScene'
 const SETTLED_DROP=PRESS_SCENE.openDelayMs+STACK_SETTLE_MS
 export class BookRuntime {
@@ -42,10 +43,13 @@ export class BookRuntime {
   private shadowRevision=-1
   private shadowPasses=0
   private shadowReuses=0
+  private resolutionQuery:MediaQueryList|null=null
   private appliedBudget=0
   private fullShadowSize=2048
   private warmDrawTarget:T.WebGLRenderTarget|null=null
   private cancelProgramProbe:(()=>void)|null=null
+  private stockDepthWarm=new StockDepthWarm()
+  private stockDepthEnabled=new URLSearchParams(location.search).get('stockDepthWarm')==='1'
   private drawAudit:DrawAudit|null=null
   private matchedDepthWarm=new URLSearchParams(location.search).get('depthWarm')!=='0'
   private readingWarmDone=false
@@ -90,6 +94,7 @@ export class BookRuntime {
           }finally{this.renderer.setRenderTarget(previous);depth.side=side;depth.map=map}
           this.host.dataset.depthWarm='matched-submitted'
         }else{this.renderer.compile(new T.Mesh(representative.fm.geometry,depth),this.camera,this.scene);this.host.dataset.depthWarm='legacy-submitted'}
+        if(this.stockDepthEnabled){const n=this.stockDepthWarm.prepare(this.renderer,this.book.root,this.scene,this.light.shadow);this.host.dataset.stockDepthWarm=String(n)}
         this.readingWarmDone=true;this.host.dataset.readingWarm='submitted';this.host.dataset.readingWarmMs=String(performance.now()-start)
         if(this.warmDrawEnabled){
           // Actual shadow/material draw, but an offscreen target has its own
@@ -262,7 +267,7 @@ export class BookRuntime {
     this.host.addEventListener('pointerup',this.readPanEnd,true)
     this.host.addEventListener('pointercancel',this.readPanEnd,true)
     this.host.addEventListener('lostpointercapture',this.readPanEnd,true)
-    this.apply(c);this.onResize();this.fit();this.scheduleShaderWarm()
+    this.apply(c);this.watchResolution();window.addEventListener('resize',this.onResize);this.onResize();this.fit();this.scheduleShaderWarm()
     if(this.perf)this.startupProbe={started:startup,rendererMs,environmentMs,modelMs,setupMs:performance.now()-startup}
   }
   cancelInteraction(){
@@ -274,7 +279,7 @@ export class BookRuntime {
     this.handoffPrevious=null;this.chunkHandoffPrevious=null
     if(clearStats){this.handoffStats={samples:0,maxMm:0,lastMm:0};this.chunkHandoffStats={commits:0,cancels:0,maxMm:0,lastMm:0,invalid:0};delete this.host.dataset.handoff;delete this.host.dataset.chunkHandoffQuality}
   }
-  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.backgroundDeferred=false;this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.cancelShaderWarm();this.book.suspendTextureWork();this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
+  private contextLostHandler=(e:Event)=>{e.preventDefault();if(this.disposed)return;this.contextLost=true;this.stockDepthWarm.dispose();this.backgroundDeferred=false;this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.cancelShaderWarm();this.book.suspendTextureWork();this.contactWorker?.reset();this.perf?.dispose();this.perf=null;cancelAnimationFrame(this.frame);this.frame=0;this.clearPageHover();this.host.dataset.contextStatus='lost';this.onContextStatus?.('lost')}
   private contextRestoredHandler=()=>{if(this.disposed)return;this.host.dataset.contextStatus='restored';this.onContextStatus?.('restored')}
   setRenderProfile(profile:RenderProfile){
     if(this.disposed||this.contextLost)return
@@ -292,12 +297,29 @@ export class BookRuntime {
     this.light.shadow.mapSize.set(size,size);this.light.shadow.map?.setSize(size,size);this.light.shadow.needsUpdate=true
     this.host.dataset.renderBudget=JSON.stringify({level,ratio,shadowSize:size})
   }
-  private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
+  private watchResolution=()=>{
+    this.resolutionQuery?.removeEventListener('change',this.onResolutionChange)
+    this.resolutionQuery=window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    this.resolutionQuery.addEventListener('change',this.onResolutionChange)
+  }
+  private onResolutionChange=()=>{
+    if(this.disposed)return
+    this.watchResolution()
+    this.onResize()
+  }
+  private syncPreviewRatio(){
+    const ratio=Math.min(window.devicePixelRatio,2)*[1,.75,.5][this.appliedBudget]
+    if(this.renderer.getPixelRatio()!==ratio){
+      this.renderer.setPixelRatio(ratio)
+      this.host.dataset.renderBudget=JSON.stringify({level:this.appliedBudget,ratio,shadowSize:this.light.shadow.mapSize.x})
+    }
+  }
+  private onResize=()=>{this.cancelModeTransition();const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h||this.disposed||this.contextLost)return;this.syncPreviewRatio();this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.readingBounds=null;this.camera.clearViewOffset();this.camera.updateProjectionMatrix();this.invalidate()}
   private hover=(e:PointerEvent)=>{if(this.config.opening>=READ_ANGLE||this.config.interaction!=='hover'||this.reduced.matches||e.pointerType==='touch')return;const b=this.host.getBoundingClientRect();this.book.root.rotation.y=T.MathUtils.degToRad(this.config.yaw)+(e.clientX-b.left-b.width/2)/b.width*.65;this.book.root.rotation.x=T.MathUtils.degToRad(this.config.pitch)+(e.clientY-b.top-b.height/2)/b.height*.4;this.invalidate()}
   private leave=()=>{this.clearPageHover();if(this.config.opening>=READ_ANGLE)return;this.book.root.rotation.set(T.MathUtils.degToRad(this.config.pitch),T.MathUtils.degToRad(this.config.yaw),0);this.invalidate()}
   invalidate=()=>{if(!this.disposed&&!this.contextLost&&!this.frame&&!this.drawing){this.last=performance.now();this.motionClock.reset();this.frame=requestAnimationFrame(this.draw)}}
   private draw=(now:number)=>{
-    this.frame=0;if(this.disposed||this.contextLost)return;this.drawing=true
+    this.frame=0;if(this.disposed||this.contextLost)return;this.drawing=true;this.syncPreviewRatio()
     this.perf?.start(now);this.perf?.phase('start')
     const openingTarget=this.config.opening>=READ_ANGLE?180:this.config.opening
     this.orbitMoving=this.controls.enabled&&this.controls.update()
@@ -497,7 +519,7 @@ export class BookRuntime {
     if(this.releaseGoal!==null&&this.releaseIndex!==null&&c.pageIndex!==this.releaseIndex)this.releaseGoal=null
     const keys=['width','height','boardThickness','cornerRadius','pageInset','spineStyle'] as const
     const rebuild=keys.some(k=>this.config[k]!==c[k]);const shapeChanged=(["paperPhysics","paperThickness","paperGrammage","paperModulus","paperDamping","pageCurl","pageCorner","pageCount","coverFlex","pageCoupling"] as const).some(k=>this.config[k]!==c[k]);const depthChanged=physicalBook(this.config).thickness!==physicalBook(c).thickness;const frameChanged=rebuild||depthChanged||c.pitch!==this.config.pitch||c.yaw!==this.config.yaw||c.opening!==this.config.opening||c.coverFlex!==this.config.coverFlex||c.pageCoupling!==this.config.pageCoupling||c.pageCount!==this.config.pageCount;this.config={...c};if(frameChanged||shapeChanged)this.resetHandoffProbes();if(frameChanged){this.cancelModeTransition();this.savedReading=null;this.cancelOrbitTransition();this.readingBounds=null;this.cameraPan=null;this.touchPoints.clear();this.touchMode='idle';this.touchStart=null;this.touchPinch=null}
-    if(rebuild){this.backgroundDeferred=false;this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
+    if(rebuild){this.backgroundDeferred=false;this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.stockDepthWarm.dispose();delete this.host.dataset.stockDepthWarm;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.geometryRevision++;this.motionClock.reset();this.contactWorker?.reset();delete this.host.dataset.workerCollision;this.solidProbeKey='';this.groupProbeKey='';this.openingActive=false;this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.scene.remove(this.book.root);this.book.dispose();this.book=createBook(c,this.invalidate,this.warmTexture);this.book.setOpening(this.open);this.scene.add(this.book.root);this.scheduleShaderWarm()}else this.book.updateAppearance(c)
     if(rebuild||depthChanged||shapeChanged){this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality}
     if((depthChanged||shapeChanged)&&!rebuild){this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';delete this.host.dataset.workerCollision}
     if(this.index>leafCount(c)||this.turn&&(this.turn.direction===1?leafCount(c)-this.index:this.index)<(this.turn.span??1)+this.followers.length){this.index=Math.min(this.index,leafCount(c));this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null}
@@ -506,7 +528,7 @@ export class BookRuntime {
   switchProject(c:BookConfig){
     // A project change is not a page-turn command. Reset transient state
     // before applying the new model, while retaining the WebGL renderer.
-    this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false';this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
+    this.stockDepthWarm.dispose();delete this.host.dataset.stockDepthWarm;this.cancelShaderWarm();this.readingWarmDone=false;delete this.host.dataset.readingWarm;delete this.host.dataset.depthWarm;delete this.host.dataset.programWarm;this.shadowDirty=true;this.shadowRevision=-1;this.renderBudget.reset();this.applyRenderBudget(this.fixedProfile);this.profilePending=false;this.host.dataset.renderProfilePending='false';this.backgroundDeferred=false;this.book.resumeBackground();this.input.reset();this.firstCommandAt=null;this.firstCommandContext=null;this.firstCommandFrames=[];this.firstCommandFrameCount=0;this.firstMotionSamples=[];this.firstMotionTrace=[];delete this.host.dataset.firstMotion;delete this.host.dataset.firstMotionTrace;this.resetHandoffProbes(true);this.book.resetSurfaceQuality();delete this.host.dataset.surfaceQuality;this.contactWorker?.reset();this.book.resetSweptContacts();this.solidProbeKey='';this.turn=null;this.followers=[];this.dragging=false;this.releaseGoal=null;this.regrab=false;this.hovered=false;this.groupDrag=1;this.brakeElapsed=0
     this.coverMotion=null;this.openingActive=false;this.dropElapsed=2000;this.open=c.opening>=READ_ANGLE?180:c.opening
     this.index=nextLeaf(0,c.pageIndex,leafCount(c));this.settledIndex=-1;this.cameraPan=null;this.groupProbeKey='';this.groupProbe='';this.largeGroupProbe=''
     this.savedReading=null;this.cancelOrbitTransition();this.peakActive=0;this.peakChunk=0;this.renderedHandoffFrames=0;this.orbitReading=false;this.update(c);this.book.setOpening(this.open);this.book.setDrop(2000);this.book.setReading(this.index,[]);this.fit()
@@ -728,5 +750,5 @@ export class BookRuntime {
     const background=this.scene.background,floorVisible=this.floor.visible;
     try{this.shadowDirty=true;this.renderer.shadowMap.autoUpdate=true;if(transparent){this.scene.background=null;this.floor.visible=false}this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h,false);this.renderer.render(this.scene,this.camera);const png=this.renderer.domElement.toDataURL('image/png');if(!png.startsWith('data:image/png;base64,'))throw Error('PNG 导出失败');return png}finally{this.scene.background=background;this.floor.visible=floorVisible;this.renderer.setPixelRatio(old);this.renderer.setSize(w,h,false);this.applyRenderBudget(previousBudget);this.invalidate()}
   }
-  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();this.drawAudit?.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.warmDrawTarget?.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
+  dispose(){this.disposed=true;this.cancelShaderWarm();this.contactWorker?.dispose();this.perf?.dispose();this.drawAudit?.dispose();this.stockDepthWarm.dispose();cancelAnimationFrame(this.frame);cancelAnimationFrame(this.hoverFrame);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);this.renderer.domElement.removeEventListener('webglcontextrestored',this.contextRestoredHandler);this.resize.disconnect();window.removeEventListener('resize',this.onResize);this.resolutionQuery?.removeEventListener('change',this.onResolutionChange);this.resolutionQuery=null;this.host.removeEventListener('wheel',this.readWheel);this.host.removeEventListener('pointerdown',this.readPanStart,true);this.host.removeEventListener('pointermove',this.readPanMove,true);this.host.removeEventListener('pointerup',this.readPanEnd,true);this.host.removeEventListener('pointercancel',this.readPanEnd,true);this.host.removeEventListener('lostpointercapture',this.readPanEnd,true);this.controls.dispose();this.renderer.domElement.removeEventListener('pointermove',this.hover);this.renderer.domElement.removeEventListener('pointerleave',this.leave);this.book.dispose();this.floor.geometry.dispose();this.floor.material.dispose();this.light.shadow.dispose();this.warmDrawTarget?.dispose();this.environment.dispose();this.renderer.dispose();this.renderer.domElement.remove()}
 }

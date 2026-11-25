@@ -9,6 +9,7 @@ export class DrawAudit {
  private inShadow=false
  private shadowMs=0
  private groups:Record<string,{calls:number;ms:number;newPrograms:number}>={}
+ private created:{group:string;object:string;skinned:boolean;side:number;mapped:boolean;keys:string[]}[]=[]
  private before={programs:0,textures:0,geometries:0}
  constructor(private renderer:T.WebGLRenderer){
   this.originalDraw=renderer.renderBufferDirect
@@ -21,6 +22,10 @@ export class DrawAudit {
     const key=(self.inShadow?'shadow:':'color:')+(object.name==='Turning page'?'leaf':material.type)
     const entry=self.groups[key]??={calls:0,ms:0,newPrograms:0}
     entry.calls++;entry.ms+=performance.now()-start;entry.newPrograms+=Math.max(0,(renderer.info.programs?.length??0)-programs)
+    if((renderer.info.programs?.length??0)>programs){
+     const keys=(renderer.info.programs??[]).slice(programs).map(p=>(p as unknown as {cacheKey:string}).cacheKey)
+     self.created.push({group:key,object:object.name,skinned:!!(object as T.SkinnedMesh).isSkinnedMesh,side:material.side,mapped:!!(material as T.MeshDepthMaterial).map,keys})
+    }
    }
   }
   renderer.shadowMap.render=function(...args){
@@ -29,7 +34,7 @@ export class DrawAudit {
    try{return self.originalShadow.apply(this,args)}finally{self.shadowMs+=performance.now()-start;self.inShadow=false}
   }
  }
- begin(){this.groups={};this.shadowMs=0;this.before={...this.renderer.info.memory,programs:this.renderer.info.programs?.length??0};this.running=true}
- end(){this.running=false;return {shadowMs:this.shadowMs,groups:this.groups,before:this.before,after:{...this.renderer.info.memory,programs:this.renderer.info.programs?.length??0}}}
+ begin(){this.created=[];this.groups={};this.shadowMs=0;this.before={...this.renderer.info.memory,programs:this.renderer.info.programs?.length??0};this.running=true}
+ end(){this.running=false;return {shadowMs:this.shadowMs,groups:this.groups,created:this.created,before:this.before,after:{...this.renderer.info.memory,programs:this.renderer.info.programs?.length??0}}}
  dispose(){this.running=false;this.renderer.renderBufferDirect=this.originalDraw;this.renderer.shadowMap.render=this.originalShadow}
 }

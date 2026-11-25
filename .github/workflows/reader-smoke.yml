@@ -15,6 +15,7 @@ on:
       - 'src/core/clearance.ts'
       - 'src/core/renderProbe.ts'
       - 'src/core/drawAudit.ts'
+      - 'src/core/stockDepthWarm.ts'
       - 'src/core/renderBudget.ts'
       - 'src/core/programWarm.ts'
       - 'src/editor/**'
@@ -88,7 +89,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser -- browser-tests/viewport-runtime.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts browser-tests/fixed-render.spec.ts browser-tests/profile-decode.spec.ts browser-tests/first-frame-audit.spec.ts browser-tests/cover-lifecycle.spec.ts
+      - run: npm run test:browser -- browser-tests/viewport-runtime.spec.ts browser-tests/product-batch.spec.ts browser-tests/select-ui.spec.ts browser-tests/asset-export.spec.ts browser-tests/camera-experience.spec.ts browser-tests/fixed-render.spec.ts browser-tests/profile-decode.spec.ts browser-tests/first-frame-audit.spec.ts browser-tests/cover-lifecycle.spec.ts browser-tests/high-dpi-lifecycle.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

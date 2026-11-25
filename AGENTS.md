@@ -174,3 +174,7 @@ Desktop Commander 恢复连接。#19 d81a1af、#20 0bbacd6 最新五项检查均
 - V0.9 第二十轮（PR #27，基线6fa8c65，目标feat/v0.9-reading）：r174阴影实际参数审查，?perf=1&drawAudit=1首输入CPU分解（阴影/颜色、叶/材质、程序新增、资源；嵌套非相加、非GPU完成），匹配活动叶depth预热BackSide/front map/既有shadow target/shadow camera，finally恢复、不额外绘制。M4/SwiftShader各3组成对真实输入，活动叶首阴影新增program1→0，软件首运动中位480.8→447.6ms、首render197.7→180.4ms、阴影184.1→155.6ms；M4首运动39.5→33.9ms、阴影10→5.4ms，首翻总883.3→908.6ms未改善。依据消除确定重复变体默认匹配，?depthWarm=0回退；软件普通depth组153–186ms且仍新增2程序，未归因单一驱动。封面/封底/书脊Image完成/损坏/替换/销毁释放src/事件/监听，真实像素验证，未认证长期内存。170单测/类型/构建、初始软件三组成对及M4七项通过；证据docs/benchmarks/v0.9-draw-audit-cover-m4.json，新cover门禁纳入CI，draw-audit手动。原物理/画质/正式版/并行工作区保持；未完成全PR逐行复审、实际用户严重冷启动和Windows实体GPU，不提前合并。
 
 - 第二十轮补充：最终默认SwiftShader 6/6、170单测/类型/构建通过，新旧落页814×716 RGBA完全一致，首活动叶depth新增1→0；M4对照在默认切换前明确开启验证。集中提交；不将落页像素等价扩展成全部运动逐帧认证。
+
+- V0.9 第二十一轮（PR #27，基线ff80e14）：DrawAudit新增对象/蒙皮/side/map/cacheKey证据，剩余普通depth程序确证Unread page block mapped及Front cover skinned unmapped。?stockDepthWarm=1有界opaque PCF caster编译（实际6、最多8，借用几何、恢复target、清map、项目/上下文/销毁释放），两渲染器各三组首绘制普通program2→0，落页814×716像素全一致，但首运动中位软件415.8→459.1ms、M4 32.6→34.3ms，未稳定提速，保持实验关闭。DPR监听/window resize/每次draw校验，变化才重分配，销毁解除；M4 DPR2均衡1221×1074、经济814×716、调整/重建974×566、完整PNG1948×1132，CDP DPR1.25真实翻页后608×353、context恢复一致并翻至13。初版导出期望错误、CDP单改DPR未通知，最终按原导出合同及真实输入校验通过；未验收实体跨屏/Windows。172单测/类型/构建、M4最终视口4/4及两渲染器三组对照通过，证据docs/benchmarks/v0.9-stock-depth-hidpi-m4.json；新高DPI门禁入CI。原正式版、物理、并行工作区不变，不提前合并；实际用户冷启动、长期内存、累计全PR逐行审查仍待证。
+
+- 第二十一轮补充：最终SwiftShader 2/2通过（含高DPI生命周期及原活动叶匹配预热），集中提交。

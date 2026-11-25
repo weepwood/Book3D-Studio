@@ -4,6 +4,7 @@ import {writeFile} from 'node:fs/promises'
 test('首次纸叶绘制分解及匹配阴影变体预热对照',async({browser},info)=>{
  test.setTimeout(180000)
  const results=[],images:Record<number,string[]>={}
+ const stock=process.env.BOOK3D_STOCK_DEPTH_BENCH==='1'
  const rounds=process.env.BOOK3D_DRAW_BENCH==='1'?3:1
  for(let round=0;round<rounds;round++)for(const matched of round%2?[true,false]:[false,true]){
   const context=await browser.newContext({baseURL:'http://127.0.0.1:4173',viewport:{width:1280,height:800}})
@@ -23,12 +24,13 @@ test('首次纸叶绘制分解及匹配阴影变体预热对照',async({browser}
      proto[name]=function(...args:unknown[]){if(!enabled)return original.apply(this,args);const start=performance.now();try{return original.apply(this,args)}finally{const c=calls[name]??={n:0,ms:0};c.n++;c.ms+=performance.now()-start}}
     }
    })
-   await page.goto('/?perf=1&drawAudit=1'+(matched?'':'&depthWarm=0'))
+   await page.goto('/?perf=1&drawAudit=1'+(stock?(matched?'&stockDepthWarm=1':''):(matched?'':'&depthWarm=0')))
    const host=page.locator('.canvas-host')
    await expect(host).toHaveAttribute('data-page-ready','true',{timeout:30000})
    await expect(host).toHaveAttribute('data-reading-warm','submitted',{timeout:30000})
-   await expect(host).toHaveAttribute('data-depth-warm',matched?'matched-submitted':'legacy-submitted')
-   const warmMs=Number(await host.getAttribute('data-reading-warm-ms'))
+   await expect(host).toHaveAttribute('data-depth-warm',stock||matched?'matched-submitted':'legacy-submitted')
+   const warmMs=Number(await host.getAttribute('data-reading-warm-ms')),stockVariants=Number(await host.getAttribute('data-stock-depth-warm'))
+   if(stock&&matched)expect(stockVariants).toBeGreaterThan(0)
    await page.evaluate(()=>{const h=document.querySelector<HTMLElement>('.canvas-host')!;const trace:unknown[]=[];Object.assign(window,{auditTimeline:trace});const collect=()=>{const d=h.dataset;trace.push({index:Number(d.pageIndex),render:Number(d.pageRenderProgress),active:Number(d.activeLeaves),chunk:Number(d.chunkLeaves)});if(d.firstMotionTrace)(window as any).stopDrawCalls()};new MutationObserver(collect).observe(h,{attributes:true,attributeFilter:['data-page-index','data-page-progress','data-first-motion-trace']});collect();(window as any).startDrawCalls()})
    const start=await page.evaluate(()=>performance.now())
    await page.getByRole('button',{name:'下一页',exact:true}).click()
@@ -46,7 +48,7 @@ test('首次纸叶绘制分解及匹配阴影变体预热对照',async({browser}
    await page.mouse.move(3,3);await page.waitForTimeout(400)
    const png=await host.locator('canvas').screenshot({path:info.outputPath(round+'-'+matched+'.png')})
    ;(images[round]??=[]).push(png.toString('base64'))
-   results.push({round,matched,warmMs,firstMs:result.at-start,...result})
+   results.push({round,matched,stock,stockVariants,warmMs,firstMs:result.at-start,...result})
   }finally{await context.close()}
  }
  const page=await browser.newPage()
