@@ -9,6 +9,7 @@ import {PRESS_SCENE} from './referenceScene'
 import {applyPaperShading} from './paperShading'
 import {paperEdgeTexture} from './paperEdge'
 import {pageRaster,textureEvictions,PAGE_TEXTURE_BUDGET} from './textureBudget'
+import {createPageDecodeQueue,decodePageImage,type DecodedPage} from './pageDecode'
 export const READ_ANGLE=175
 export const clamp01=(n:number)=>Math.min(1,Math.max(0,n))
 export const leafCount=(c:Pick<BookConfig,'pageCount'|'pageImages'>)=>Math.ceil(Math.max(2,c.pageCount,c.pageImages.length)/2)
@@ -46,7 +47,7 @@ const passages=[
   ['03','Small experiments','Build a small thing. Observe what happens. Keep what works and change what does not. The next attempt begins with what the last one taught us.'],
   ['04','A slower rhythm','Some things reward patience. A page, a conversation, a careful observation: each makes time for a different kind of understanding.']
 ]
-function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void){
+function pageTexture(c:BookConfig,index:number,flip:boolean,decoder:ReturnType<typeof createPageDecodeQueue>,ready:(texture:T.Texture)=>void){
   const raster=pageRaster(c.width,c.height),canvas=document.createElement('canvas');canvas.width=raster.width;canvas.height=raster.height
   const w=raster.logicalWidth,h=raster.logicalHeight
   const context=(target:HTMLCanvasElement)=>{const g=target.getContext('2d')!;g.setTransform(target.width/w,0,0,target.height/h,0,0);return g}
@@ -71,13 +72,26 @@ function pageTexture(c:BookConfig,index:number,flip:boolean,invalidate:()=>void)
   const own=hasBleed&&(frontImage||backImage)?canvas.cloneNode() as HTMLCanvasElement:null
   if(own)context(own).drawImage(canvas,0,0,w,h)
   let reverse:HTMLCanvasElement|null=null
-  const redraw=()=>{if(texture.userData.disposed)return;if(own){ctx.clearRect(0,0,w,h);ctx.drawImage(own,0,0,w,h)}if(reverse&&c.pageBleed>0){ctx.save();ctx.globalAlpha=c.pageBleed;ctx.globalCompositeOperation='multiply';ctx.translate(w,0);ctx.scale(-1,1);ctx.drawImage(reverse,0,0,w,h);ctx.restore()}texture.needsUpdate=true;invalidate()}
+  const redraw=()=>{if(texture.userData.disposed)return;if(own){ctx.clearRect(0,0,w,h);ctx.drawImage(own,0,0,w,h)}if(reverse&&c.pageBleed>0){ctx.save();ctx.globalAlpha=c.pageBleed;ctx.globalCompositeOperation='multiply';ctx.translate(w,0);ctx.scale(-1,1);ctx.drawImage(reverse,0,0,w,h);ctx.restore()}texture.needsUpdate=true}
   texture.userData.pending=0
-  const load=(url:string,done:(im:HTMLImageElement)=>void)=>{const im=new Image();texture.userData.pending++;const finish=()=>{texture.userData.pending--;if(!texture.userData.disposed)invalidate()};im.onload=()=>{try{if(!texture.userData.disposed)done(im)}finally{finish()}};im.onerror=finish;im.src=url}
-  const paint=(target:HTMLCanvasElement,im:HTMLImageElement,bg:string)=>{const g=context(target);g.fillStyle=bg;g.fillRect(0,0,w,h);const q=Math.min(w/im.width,h/im.height);g.drawImage(im,(w-im.width*q)/2,(h-im.height*q)/2,im.width*q,im.height*q)}
-  if(frontImage)load(frontImage,im=>{paint(own??canvas,im,c.paperColor);redraw()})
+  const cancellations:(()=>void)[]=[]
+  texture.userData.cancelDecode=()=>{for(const cancel of cancellations)cancel();cancellations.length=0;texture.userData.pending=0}
+  const load=(url:string,done:(im:DecodedPage)=>void)=>{
+    texture.userData.pending++
+    cancellations.push(decoder.request(url,im=>{
+      if(texture.userData.disposed)return
+      try{if(im)done(im);else texture.userData.decodeFailed=true}
+      catch{texture.userData.decodeFailed=true}
+      finally{
+        texture.userData.pending--
+        if(texture.userData.pending===0){redraw();cancellations.length=0;ready(texture)}
+      }
+    },()=>!!texture.userData.visible))
+  }
+  const paint=(target:HTMLCanvasElement,im:DecodedPage,bg:string)=>{const g=context(target);g.fillStyle=bg;g.fillRect(0,0,w,h);const q=Math.min(w/im.width,h/im.height);g.drawImage(im.source,(w-im.width*q)/2,(h-im.height*q)/2,im.width*q,im.height*q)}
+  if(frontImage)load(frontImage,im=>{paint(own??canvas,im,c.paperColor)})
   if(hasBleed){
-    reverse=canvas.cloneNode() as HTMLCanvasElement;const g=context(reverse);g.fillStyle='#ffffff';g.fillRect(0,0,w,h);g.fillStyle='#302e28';g.font='24px Georgia';const text=passages[Math.floor(opposite/2)%passages.length][2];let line='',y=h*.34;for(const word of (text+' '+text).split(' ')){const next=line?line+' '+word:word;if(g.measureText(next).width>w-96){if(y>h-90)break;g.fillText(line,48,y);y+=34;line=word}else line=next}if(line&&y<=h-90)g.fillText(line,48,y);redraw();if(backImage)load(backImage,im=>{if(reverse){paint(reverse,im,'#ffffff');redraw()}})
+    reverse=canvas.cloneNode() as HTMLCanvasElement;const g=context(reverse);g.fillStyle='#ffffff';g.fillRect(0,0,w,h);g.fillStyle='#302e28';g.font='24px Georgia';const text=passages[Math.floor(opposite/2)%passages.length][2];let line='',y=h*.34;for(const word of (text+' '+text).split(' ')){const next=line?line+' '+word:word;if(g.measureText(next).width>w-96){if(y>h-90)break;g.fillText(line,48,y);y+=34;line=word}else line=next}if(line&&y<=h-90)g.fillText(line,48,y);redraw();if(backImage)load(backImage,im=>{if(reverse)paint(reverse,im,'#ffffff')})
   }
   return texture
 }
@@ -108,18 +122,43 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   const cache=new Map<string,{texture:T.Texture;bytes:number}>();let generation=0,hits=0,misses=0,evictions=0,estimatedBytes=0,peakEstimatedBytes=0
   const placeholder=new T.DataTexture(new Uint8Array([255,255,255,255]),1,1);placeholder.colorSpace=T.SRGBColorSpace;placeholder.needsUpdate=true
   const capacity=24
-  const disposeTexture=(texture:T.Texture)=>{texture.userData.disposed=true;texture.dispose()}
+  const raster=pageRaster(c.width,c.height),decodeBudget=8*1024*1024
+  const decodedCacheEnabled=new URLSearchParams(location.search).get('decodedCache')!=='0'
+  const decoder=createPageDecodeQueue(url=>decodePageImage(url,raster.width,raster.height),2,decodedCacheEnabled?decodeBudget:0)
+  const reservedDecodeBytes=()=>decodedCacheEnabled&&config.pageImages.length?decodeBudget:0
+  const warmQueue=new Set<T.Texture>()
+  let warmIdle:number|null=null,warmNative=false,decodedWarm=0,warmSuspended=false
+  function cancelWarm(){
+    if(warmIdle!==null){if(warmNative)window.cancelIdleCallback(warmIdle);else window.clearTimeout(warmIdle);warmIdle=null}
+    warmQueue.clear()
+  }
+  function scheduleWarm(){
+    if(disposed||warmSuspended||!warm||warmIdle!==null||!warmQueue.size)return
+    const run=(deadline?:IdleDeadline)=>{
+      warmIdle=null;if(disposed)return
+      if(!deadline||deadline.timeRemaining()>=5){
+        const texture=warmQueue.values().next().value!
+        if(texture){warmQueue.delete(texture);if(!texture.userData.disposed&&!texture.userData.visible&&warm(texture))decodedWarm++}
+      }
+      if(!warmQueue.size)invalidate();else scheduleWarm()
+    }
+    warmNative=typeof window.requestIdleCallback==='function'
+    warmIdle=warmNative?window.requestIdleCallback(run):window.setTimeout(()=>run(),32)
+  }
+  function readyTexture(texture:T.Texture){if(disposed||texture.userData.disposed)return;if(texture.userData.visible)invalidate();else if(warm){warmQueue.add(texture);scheduleWarm()}}
+  const disposeTexture=(texture:T.Texture)=>{texture.userData.disposed=true;texture.userData.cancelDecode?.();warmQueue.delete(texture);texture.dispose()}
   const trim=()=>{
     const pinned=new Set([...materials].flatMap(mat=>mat.map?[mat.map]:[]))
-    const plan=textureEvictions(cache,pinned,capacity,PAGE_TEXTURE_BUDGET)
+    for(const [key,entry] of cache){entry.texture.userData.visible=pinned.has(entry.texture);if(!entry.texture.userData.visible&&!key.startsWith(generation+':')){cache.delete(key);disposeTexture(entry.texture);evictions++}}
+    const plan=textureEvictions(cache,pinned,capacity,PAGE_TEXTURE_BUDGET-reservedDecodeBytes())
     for(const key of plan.keys){const entry=cache.get(key)!;cache.delete(key);disposeTexture(entry.texture);evictions++}
-    estimatedBytes=plan.bytes;peakEstimatedBytes=Math.max(peakEstimatedBytes,estimatedBytes)
+    estimatedBytes=plan.bytes+reservedDecodeBytes();peakEstimatedBytes=Math.max(peakEstimatedBytes,estimatedBytes)
   }
   function acquire(index:number,flip=false){
     const key=generation+':'+index+':'+flip
     const cached=cache.get(key)
     if(cached){hits++;cache.delete(key);cache.set(key,cached);return cached.texture}
-    misses++;const started=performance.now(),texture=pageTexture(config,index,flip,invalidate),elapsed=performance.now()-started;textureBuildMs+=elapsed;peakTextureBuildMs=Math.max(peakTextureBuildMs,elapsed);cache.set(key,{texture,bytes:Number(texture.userData.estimatedBytes)});return texture
+    misses++;const started=performance.now();const texture=pageTexture(config,index,flip,decoder,readyTexture);const elapsed=performance.now()-started;textureBuildMs+=elapsed;peakTextureBuildMs=Math.max(peakTextureBuildMs,elapsed);cache.set(key,{texture,bytes:Number(texture.userData.estimatedBytes)});return texture
   }
   let idle:number|null=null,idleNative=false,disposed=false,preloadKey=''
   let prefetched=0,prefetchUploads=0,textureBuildMs=0,peakTextureBuildMs=0
@@ -162,7 +201,7 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
   }
   function unpin(mat:T.MeshPhongMaterial){if(keys.has(mat)||mat.map&&mat.map!==placeholder){keys.delete(mat);mat.map=placeholder}}
   function update(next:BookConfig){
-    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor){cancelPreload();generation++;keys.clear()}
+    if(next.pageImages!==config.pageImages||next.pageCount!==config.pageCount||next.paperColor!==config.paperColor||next.title!==config.title||next.pageBleed!==config.pageBleed||next.coverColor!==config.coverColor){cancelPreload();cancelWarm();decoder.clearCache();generation++;keys.clear();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()}
     if(next.paperColor!==config.paperColor){for(const [mat,vertical] of [[chunkEdge,true],[chunkHead,false]] as const){mat.map?.dispose();mat.map=paperEdgeTexture(next.paperColor,vertical);mat.needsUpdate=true}}
     config=next;blank.color.set(next.paperColor)
   }
@@ -184,5 +223,5 @@ export function createPageLayer(w:number,h:number,c:BookConfig,invalidate:()=>vo
     for(let i=block?0:active.length;i<slots.length;i++){const s=slots[i];s.leaf.visible=false;unpin(s.front);unpin(s.back)}
     trim()
   }
-  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,cancelPreload:()=>{cancelPreload();cancelPool();preloadKey=''},textureMetrics:()=>({slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
+  return {root,left,right,slots,chunk,chunkShape,update,pose,prepareChunk,prepareShaders,suspendTextureWork:()=>{warmSuspended=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const entry of cache.values())entry.texture.userData.cancelDecode?.()},cancelPreload:()=>{cancelPreload();cancelPool();cancelWarm();preloadKey=''},textureMetrics:()=>({reservedDecodeBytes:reservedDecodeBytes(),decode:decoder.metrics(),decodedWarm,warmQueued:warmQueue.size,pendingTextures:[...cache.values()].filter(e=>e.texture.userData.pending>0).length,failedTextures:[...cache.values()].filter(e=>e.texture.userData.decodeFailed).length,slots:slots.length,prefetched,prefetchUploads,textureBuildMs,peakTextureBuildMs,size:cache.size,capacity,hits,misses,evictions,estimatedBytes,peakEstimatedBytes,budgetBytes:PAGE_TEXTURE_BUDGET}),dispose:()=>{disposed=true;cancelPreload();cancelPool();cancelWarm();decoder.dispose();for(const mat of materials)mat.map=null;for(const entry of cache.values())disposeTexture(entry.texture);cache.clear();placeholder.dispose();chunk.material[4]=chunkFront;chunk.material[5]=chunkBack;blank.dispose();slots.forEach(s=>s.gpu.dispose())}}
 }
