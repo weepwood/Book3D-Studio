@@ -16,3 +16,17 @@ it('bounds pending work, ignores stale replies and terminates old workers',()=>{
   client.dispose();client.request(capture);expect(capture).toHaveBeenCalledTimes(2);expect(instances[1].terminate).toHaveBeenCalledTimes(1)
  }finally{vi.unstubAllGlobals()}
 })
+
+it('recovers from an unresponsive worker without leaving a pending queue',()=>{
+ vi.useFakeTimers()
+ const terminate=vi.fn()
+ class SilentWorker{onmessage=null;onerror=null;postMessage=vi.fn();terminate=terminate}
+ vi.stubGlobal('Worker',SilentWorker)
+ try{
+  const receive=vi.fn(),client=new ContactWorkerClient(receive),capture=vi.fn(()=>({opening:0,index:0,meshes:[]}))
+  client.request(capture);vi.advanceTimersByTime(5000)
+  expect(terminate).toHaveBeenCalledOnce();expect(receive).toHaveBeenCalledWith({id:1,error:'Collision worker timed out'})
+  client.request(capture);expect(capture).toHaveBeenCalledTimes(2);client.dispose()
+  expect(vi.getTimerCount()).toBe(0)
+ }finally{vi.unstubAllGlobals();vi.useRealTimers()}
+})

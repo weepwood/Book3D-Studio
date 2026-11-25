@@ -12,7 +12,7 @@ scope.onmessage=({data})=>{
    if(a===b||!a.geometry.boundingBox!.intersectsBox(b.geometry.boundingBox!))continue
    containment.push({outer:a.name,inner:b.name,...containmentProbe(a.geometry,a.tree,b.geometry,256)})
   }
-  scope.postMessage({id:data.id,report:{opening:data.opening,index:data.index,self,containment,elapsedMs:performance.now()-started}})
+  scope.postMessage({id:data.id,report:{opening:data.opening,index:data.index,self,containment,elapsedMs:performance.now()-started,captureMs:data.captureMs??0,inputBytes:data.meshes.reduce((sum,m)=>sum+m.positions.byteLength+m.indices.byteLength,0)}})
  }catch(error){scope.postMessage({id:data.id,error:error instanceof Error?error.message:String(error)})}
  finally{for(const g of geometries)g.dispose()}
 }
